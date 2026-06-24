@@ -6,13 +6,6 @@ import { Property } from '../types';
 const CARTO_VOYAGER = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 const DEFAULT_CENTER: [number, number] = [-97.743057, 30.267153];
 
-const CLIENT_OFFICE = {
-  lng: -97.7395997,
-  lat: 30.3661535,
-  label: 'Current Office',
-  address: '3305 Steck Ave #275',
-};
-
 const TYPE_COLORS: Record<string, string> = {
   'Office':                  '#383b3b',
   'Industrial':              '#616665',
@@ -49,14 +42,12 @@ function createMarkerElement(
     ? '0 4px 14px rgba(0,0,0,0.45)'
     : '0 2px 8px rgba(0,0,0,0.35)';
 
-  // el is owned by MapLibre for positioning — never set transform on it
   const el = document.createElement('div');
   el.style.cssText = [
     'cursor:pointer',
     `z-index:${selected ? 100 : 10}`,
   ].join(';');
 
-  // pinWrapper is what we scale — sits inside el, unaffected by MapLibre's transform
   const pinWrapper = document.createElement('div');
   pinWrapper.style.cssText = [
     'display:flex',
@@ -103,7 +94,7 @@ function createMarkerElement(
   return { el, pinWrapper, pinInner, pinTail };
 }
 
-function createClientOfficeMarker(): HTMLElement {
+function createOfficeMarkerElement(): HTMLElement {
   const el = document.createElement('div');
   el.style.cssText = 'cursor:default;z-index:50;';
 
@@ -112,23 +103,25 @@ function createClientOfficeMarker(): HTMLElement {
     'display:flex',
     'flex-direction:column',
     'align-items:center',
+    'transform-origin:bottom center',
   ].join(';');
 
-  const pin = document.createElement('div');
-  pin.style.cssText = [
-    'width:32px',
-    'height:32px',
+  const circle = document.createElement('div');
+  circle.style.cssText = [
+    'width:34px',
+    'height:34px',
     'border-radius:50%',
-    'background:#f5a623',
+    'background:#f59e0b',
     'border:2.5px solid white',
     'display:flex',
     'align-items:center',
     'justify-content:center',
-    'box-shadow:0 2px 10px rgba(0,0,0,0.4)',
+    'box-shadow:0 3px 10px rgba(0,0,0,0.4)',
+    'font-size:16px',
+    'line-height:1',
   ].join(';');
-
-  // Star SVG
-  pin.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+  circle.textContent = '★';
+  circle.style.color = 'white';
 
   const tail = document.createElement('div');
   tail.style.cssText = [
@@ -136,34 +129,40 @@ function createClientOfficeMarker(): HTMLElement {
     'height:0',
     'border-left:5px solid transparent',
     'border-right:5px solid transparent',
-    'border-top:7px solid #f5a623',
+    'border-top:8px solid #f59e0b',
     'margin-top:-1px',
   ].join(';');
 
-  wrapper.appendChild(pin);
+  wrapper.appendChild(circle);
   wrapper.appendChild(tail);
   el.appendChild(wrapper);
   return el;
+}
+
+export interface OfficeLocation {
+  lat: number;
+  lng: number;
+  address: string;
 }
 
 interface MapViewProps {
   properties: Property[];
   selectedId: string | null;
   onSelect: (p: Property) => void;
+  officeLocation?: OfficeLocation | null;
 }
 
-export default function MapView({ properties, selectedId, onSelect }: MapViewProps) {
+export default function MapView({ properties, selectedId, onSelect, officeLocation }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<Map<string, MarkerEntry>>(new Map());
-  const clientMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const officeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelect);
   const selectedIdRef = useRef(selectedId);
 
   useEffect(() => { onSelectRef.current = onSelect; });
   useEffect(() => { selectedIdRef.current = selectedId; });
 
-  // Resize map when container dimensions change (e.g. QuickView panel opens/closes)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -186,34 +185,16 @@ export default function MapView({ properties, selectedId, onSelect }: MapViewPro
     });
     m.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-
-    const popup = new maplibregl.Popup({
-      offset: [0, -36],
-      closeButton: false,
-      closeOnClick: false,
-      className: 'client-office-popup',
-    }).setHTML(
-      `<div style="font-family:system-ui,sans-serif;padding:6px 8px;"><p style="font-size:11px;font-weight:700;color:#1e2624;margin:0 0 2px;">Current Office</p><p style="font-size:10px;color:#7a8a87;margin:0;">${CLIENT_OFFICE.address}</p></div>`
-    );
-
-    const clientEl = createClientOfficeMarker();
-    clientEl.addEventListener('mouseenter', () => popup.addTo(m));
-    clientEl.addEventListener('mouseleave', () => popup.remove());
-
-    clientMarkerRef.current = new maplibregl.Marker({ element: clientEl, anchor: 'bottom' })
-      .setLngLat([CLIENT_OFFICE.lng, CLIENT_OFFICE.lat])
-      .addTo(m);
-
     mapRef.current = m;
     return () => {
       m.remove();
       mapRef.current = null;
       markersRef.current.clear();
-      clientMarkerRef.current = null;
+      officeMarkerRef.current = null;
     };
   }, []);
 
-  // Recreate markers whenever the property list changes
+  // Recreate property markers whenever the property list changes
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -256,7 +237,52 @@ export default function MapView({ properties, selectedId, onSelect }: MapViewPro
     }
   }, [properties]);
 
-  // Update pin appearance when selection changes — never touch el.style.transform
+  // Add/update/remove office location marker
+  useEffect(() => {
+    const m = mapRef.current;
+
+    const addOfficeMarker = () => {
+      officeMarkerRef.current?.remove();
+      officeMarkerRef.current = null;
+
+      if (!officeLocation) return;
+
+      const el = createOfficeMarkerElement();
+
+      const popup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: [0, -44],
+        className: 'office-popup',
+      }).setHTML(
+        `<div style="font-family:system-ui,sans-serif;padding:6px 10px;line-height:1.4;">
+          <p style="font-size:11px;font-weight:700;color:#1e2624;margin:0 0 2px;">Current Office</p>
+          <p style="font-size:11px;color:#7a8a87;margin:0;">${officeLocation.address}</p>
+        </div>`
+      );
+
+      el.addEventListener('mouseenter', () => popup.addTo(m!));
+      el.addEventListener('mouseleave', () => popup.remove());
+
+      officeMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([officeLocation.lng, officeLocation.lat])
+        .addTo(m!);
+    };
+
+    if (!m) return;
+    if (m.isStyleLoaded()) {
+      addOfficeMarker();
+    } else {
+      m.once('load', addOfficeMarker);
+    }
+
+    return () => {
+      officeMarkerRef.current?.remove();
+      officeMarkerRef.current = null;
+    };
+  }, [officeLocation]);
+
+  // Update pin appearance when selection changes
   useEffect(() => {
     markersRef.current.forEach(({ el, pinWrapper, pinInner, pinTail, type }, id) => {
       const isSelected = id === selectedId;
@@ -303,7 +329,7 @@ export default function MapView({ properties, selectedId, onSelect }: MapViewPro
       </div>
 
       {/* Color legend */}
-      {shownTypes.length > 1 && (
+      {(shownTypes.length > 1 || officeLocation) && (
         <div
           className="absolute bottom-10 left-3 z-[500] px-3 py-2 rounded-xl shadow-lg flex flex-wrap gap-x-3 gap-y-1.5 max-w-xs"
           style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #e5e1d8' }}
@@ -317,10 +343,15 @@ export default function MapView({ properties, selectedId, onSelect }: MapViewPro
               <span className="text-xs font-medium" style={{ color: '#3a4a47' }}>{type}</span>
             </div>
           ))}
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#f5a623' }} />
-            <span className="text-xs font-medium" style={{ color: '#3a4a47' }}>Current Office</span>
-          </div>
+          {officeLocation && (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: '#f59e0b' }}
+              />
+              <span className="text-xs font-medium" style={{ color: '#3a4a47' }}>Current Office</span>
+            </div>
+          )}
         </div>
       )}
     </div>

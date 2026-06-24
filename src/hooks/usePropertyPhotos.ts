@@ -13,6 +13,21 @@ function publicUrl(path: string): string {
   return supabase.storage.from('property-photos').getPublicUrl(path).data.publicUrl;
 }
 
+async function uploadViaEdge(file: File, path: string, accessToken: string): Promise<void> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('bucket', 'property-photos');
+  form.append('path', path);
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-property-file`,
+    { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` }, body: form }
+  );
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error ?? res.statusText);
+  }
+}
+
 export function usePropertyPhotos(propertyId: string, slug: string) {
   const [storedPhotos, setStoredPhotos] = useState<StoredPhoto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,8 +60,11 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
     fetchPhotos();
   }, [fetchPhotos]);
 
-  // Supabase photos take precedence; fall back to local bundled photos
-  const photos = storedPhotos.length > 0 ? storedPhotos.map(p => p.url) : localPhotos;
+  // Supabase photos take precedence; local photos are appended after stored ones
+  // (deduplication not needed — local and storage URLs are always different)
+  const photos = storedPhotos.length > 0
+    ? [...storedPhotos.map(p => p.url), ...localPhotos]
+    : localPhotos;
 
   const upload = useCallback(
     async (files: File[]) => {
@@ -56,17 +74,21 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
           ? Math.max(...storedPhotos.map(p => p.display_order)) + 1
           : 0;
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token ?? '';
+      const userId = session?.user?.id ?? null;
+
       const added: StoredPhoto[] = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
         const path = `${propertyId}/${crypto.randomUUID()}.${ext}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('property-photos')
-          .upload(path, file, { contentType: file.type });
-
-        if (uploadError) continue;
+        try {
+          await uploadViaEdge(file, path, accessToken);
+        } catch {
+          continue;
+        }
 
         const { data, error } = await supabase
           .from('property_photos')
@@ -74,7 +96,7 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
             property_id: propertyId,
             storage_path: path,
             display_order: nextOrder + i,
-            created_by: (await supabase.auth.getUser()).data.user?.id,
+            created_by: userId,
           })
           .select()
           .single();

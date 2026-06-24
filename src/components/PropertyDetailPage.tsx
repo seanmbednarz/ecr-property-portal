@@ -1,22 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, X, ZoomIn } from 'lucide-react';
-import { Property } from '../types';
+import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, Upload, X, ZoomIn } from 'lucide-react';
+import { Property, Client } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
-import ACBLogo from '../assets/Austin_Capital_Bank_Logo.svg';
-import PatrickPhoto from '../assets/Patrick_Ley_-_Square.jpg';
-import RossPhoto from '../assets/Ross_Chumley_-_Square.jpg';
+import { Broker } from '../types';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import { supabase } from '../lib/supabase';
 
-function BrokerAvatar({ name, photo }: { name: string; photo: string }) {
+function BrokerAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
   const initials = name.split(' ').filter(w => /^[A-Z]/.test(w)).map(w => w[0]).slice(0, 2).join('');
   const [err, setErr] = useState(false);
   return (
     <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 flex items-center justify-center"
       style={{ border: '1.5px solid rgba(255,255,255,0.6)', backgroundColor: 'rgba(212,31,39,0.12)' }}>
-      {!err
-        ? <img src={photo} alt={name} className="w-full h-full object-cover" onError={() => setErr(true)} />
+      {photoUrl && !err
+        ? <img src={photoUrl} alt={name} className="w-full h-full object-cover" onError={() => setErr(true)} />
         : <span className="text-xs font-bold" style={{ color: '#d41f27' }}>{initials}</span>
       }
     </div>
@@ -27,9 +26,12 @@ interface PropertyDetailPageProps {
   property: Property;
   isFavorited: boolean;
   notesCount: number;
+  isAdmin?: boolean;
+  client?: Client | null;
   onBack: () => void;
   onFavoriteToggle: (id: string, current: boolean) => void;
   onOpenNotes: (p: Property) => void;
+  onBrochureUploaded?: (propertyId: string, url: string) => void;
 }
 
 function fmt$(v: number | null | undefined) {
@@ -41,10 +43,6 @@ function fmtSF(v: number | null | undefined) {
 function fmtMo(v: number | null | undefined) {
   if (v == null) return '—';
   return `$${Math.round(v).toLocaleString()}/mo`;
-}
-function fmtAnnual(v: number | null | undefined) {
-  if (v == null) return '—';
-  return `$${Math.round(v).toLocaleString()}/yr`;
 }
 
 
@@ -156,17 +154,31 @@ export default function PropertyDetailPage({
   property,
   isFavorited,
   notesCount,
+  isAdmin,
+  client,
   onBack,
   onFavoriteToggle,
   onOpenNotes,
+  onBrochureUploaded,
 }: PropertyDetailPageProps) {
   const [imgIdx, setImgIdx] = useState(0);
   const [imgError, setImgError] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [uploadingBrochure, setUploadingBrochure] = useState(false);
+  const [brochureError, setBrochureError] = useState('');
+  const [allBrokers, setAllBrokers] = useState<Broker[]>([]);
+  const brochureInputRef = useRef<HTMLInputElement>(null);
   const suites = property.suites ?? [];
 
+  useEffect(() => {
+    supabase.from('brokers').select('*').order('display_order').then(({ data }) => {
+      if (data) setAllBrokers(data);
+    });
+  }, []);
+
   const { photos, loading } = usePropertyPhotos(property.id, property.slug);
-  const images = photos;
+  const heroUrl = safeHttpUrl(property.hero_image_url);
+  const images = heroUrl && !photos.includes(heroUrl) ? [heroUrl, ...photos] : photos;
 
   useEffect(() => {
     if (imgIdx >= images.length && images.length > 0) setImgIdx(0);
@@ -176,6 +188,39 @@ export default function PropertyDetailPage({
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
   const prevImage = useCallback(() => setImgIdx(i => (i - 1 + images.length) % images.length), [images.length]);
   const nextImage = useCallback(() => setImgIdx(i => (i + 1) % images.length), [images.length]);
+
+  async function handleBrochureUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBrochureError('');
+    setUploadingBrochure(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const form = new FormData();
+      form.append('file', file);
+      form.append('property_id', property.id);
+      form.append('slug', property.slug);
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-brochure`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: form,
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Upload failed');
+      onBrochureUploaded?.(property.id, json.url);
+    } catch (err: unknown) {
+      setBrochureError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingBrochure(false);
+      if (brochureInputRef.current) brochureInputRef.current.value = '';
+    }
+  }
 
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -225,12 +270,28 @@ export default function PropertyDetailPage({
 
         <div className="flex items-center gap-2.5">
           <img src={ECRLogo} alt="ECR" className="h-7 w-auto" />
-          <div className="h-6 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.25)' }} />
-          <img src={ACBLogo} alt="Austin Capital Bank" className="h-5 w-auto shrink-0" style={{ maxWidth: 70 }} />
+          {client && (
+            <>
+              <div className="h-6 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.25)' }} />
+              {client.logo_url ? (
+                <img
+                  src={client.logo_url}
+                  alt={client.company}
+                  className="h-5 w-auto shrink-0 object-contain"
+                  style={{ maxWidth: 80 }}
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'white' }}>
+                  {client.company}
+                </span>
+              )}
+            </>
+          )}
         </div>
       </nav>
 
-      <main className="flex-1 max-w-[90rem] mx-auto w-full px-4 sm:px-8 py-8">
+      <main className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-8 py-8">
         {/* Top section: gallery + key info */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
           {/* Gallery */}
@@ -375,6 +436,31 @@ export default function PropertyDetailPage({
                   Download Brochure
                 </div>
               )}
+              {isAdmin && (
+                <>
+                  <input
+                    ref={brochureInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={handleBrochureUpload}
+                  />
+                  <button
+                    onClick={() => brochureInputRef.current?.click()}
+                    disabled={uploadingBrochure}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ border: '1px dashed #c8c3b8', color: '#7a8a87', backgroundColor: 'transparent' }}
+                    onMouseEnter={(e) => { if (!uploadingBrochure) { e.currentTarget.style.borderColor = '#879792'; e.currentTarget.style.color = '#3a4a47'; } }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#c8c3b8'; e.currentTarget.style.color = '#7a8a87'; }}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {uploadingBrochure ? 'Uploading…' : property.brochure_url ? 'Replace Brochure' : 'Upload Brochure'}
+                  </button>
+                  {brochureError && (
+                    <p className="text-xs text-center" style={{ color: '#d41f27' }}>{brochureError}</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -467,7 +553,7 @@ export default function PropertyDetailPage({
                           <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.op_exp != null ? `${fmt$(s.op_exp)}/SF` : '—'}</td>
                           <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fullSvc != null ? `${fmt$(fullSvc)}/SF` : '—'}</td>
                           <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fmtMo(monthlyRent)}</td>
-                          <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fmtAnnual(annualRent)}</td>
+                          <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{annualRent != null ? `$${Math.round(annualRent).toLocaleString()}/yr` : '—'}</td>
                           <td className="px-4 py-3">
                             <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium"
                               style={s.available === 'Available Now'
@@ -498,18 +584,15 @@ export default function PropertyDetailPage({
       <footer className="shrink-0" style={{ backgroundColor: '#2a3330', borderTop: '1px solid rgba(136,152,147,0.15)' }}>
 
         {/* Mobile footer: brokers in 2 columns, then logo + tagline row */}
-        <div className="sm:hidden px-4 py-4 space-y-3">
+        <div className="md:hidden px-4 py-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            {[
-              { name: 'Patrick Ley', title: 'SIOR CCIM', tel: '5125050002', telDisplay: '512.505.0002', email: 'pley@ecrtx.com', photo: PatrickPhoto },
-              { name: 'Ross Chumley', title: '', tel: '5125050029', telDisplay: '512.505.0029', email: 'rchumley@ecrtx.com', photo: RossPhoto },
-            ].map(b => (
-              <div key={b.name} className="flex items-start gap-2">
-                <BrokerAvatar name={b.name} photo={b.photo} />
+            {(property.brokers?.length ? property.brokers : allBrokers.slice(0, 2)).map(b => (
+              <div key={b.id} className="flex items-start gap-2">
+                <BrokerAvatar name={b.name} photoUrl={b.photo_url} />
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold leading-tight text-white">{b.name}{b.title ? `, ${b.title}` : ''}</p>
-                  <a href={`tel:${b.tel}`} className="text-xs block" style={{ color: '#889893' }}>{b.telDisplay}</a>
-                  <a href={`mailto:${b.email}`} className="text-xs block truncate" style={{ color: '#889893' }}>{b.email}</a>
+                  <p className="text-xs font-semibold leading-tight text-white">{b.name}</p>
+                  {b.phone && <a href={`tel:${b.phone.replace(/\D/g, '')}`} className="text-xs block" style={{ color: '#889893' }}>{b.phone}</a>}
+                  {b.email && <a href={`mailto:${b.email}`} className="text-xs block truncate" style={{ color: '#889893' }}>{b.email}</a>}
                 </div>
               </div>
             ))}
@@ -520,42 +603,36 @@ export default function PropertyDetailPage({
           </div>
         </div>
 
-        {/* Desktop footer (sm+): horizontal flex */}
-        <div className="hidden sm:flex flex-wrap items-center gap-4 px-6 py-3">
+        {/* Desktop footer (md+): matches Dashboard footer exactly */}
+        <div className="hidden md:flex flex-wrap items-center gap-4 px-4 sm:px-6 py-3">
           <img src={ECRLogo} alt="ECR" className="h-6 w-auto shrink-0" />
-          <div className="h-5 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.2)' }} />
-          <span className="text-xs uppercase tracking-widest" style={{ color: 'rgba(136,152,147,0.4)' }}>Prepared by</span>
-          <div className="flex items-center gap-2">
-            <BrokerAvatar name="Patrick Ley" photo={PatrickPhoto} />
-            <div>
-              <p className="text-xs font-semibold leading-tight text-white">Patrick Ley, SIOR CCIM</p>
-              <a href="tel:5125050002" className="text-xs transition-colors block" style={{ color: '#889893' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'white'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#889893'; }}>512.505.0002</a>
-              <a href="mailto:pley@ecrtx.com" className="text-xs transition-colors block" style={{ color: '#889893' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'white'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#889893'; }}>pley@ecrtx.com</a>
+          <div className="h-5 w-px shrink-0 hidden sm:block" style={{ backgroundColor: 'rgba(136,152,147,0.2)' }} />
+          <span className="text-xs uppercase tracking-widest hidden sm:block" style={{ color: '#b5c5c1' }}>Prepared by</span>
+          {(property.brokers?.length ? property.brokers : allBrokers.slice(0, 2)).map((broker, i) => (
+            <div key={broker.id} className="flex items-center gap-2">
+              {i > 0 && <div className="h-5 w-px hidden sm:block" style={{ backgroundColor: 'rgba(136,152,147,0.15)' }} />}
+              <BrokerAvatar name={broker.name} photoUrl={broker.photo_url} />
+              <div>
+                <p className="text-xs font-semibold leading-tight text-white">{broker.name}</p>
+                {broker.phone && (
+                  <a href={`tel:${broker.phone.replace(/\D/g, '')}`} className="text-xs transition-colors block" style={{ color: '#889893' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = '#889893'; }}>{broker.phone}</a>
+                )}
+                {broker.email && (
+                  <a href={`mailto:${broker.email}`} className="text-xs transition-colors block" style={{ color: '#889893' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = '#889893'; }}>{broker.email}</a>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="h-5 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.15)' }} />
-          <div className="flex items-center gap-2">
-            <BrokerAvatar name="Ross Chumley" photo={RossPhoto} />
-            <div>
-              <p className="text-xs font-semibold leading-tight text-white">Ross Chumley</p>
-              <a href="tel:5125050029" className="text-xs transition-colors block" style={{ color: '#889893' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'white'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#889893'; }}>512.505.0029</a>
-              <a href="mailto:rchumley@ecrtx.com" className="text-xs transition-colors block" style={{ color: '#889893' }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'white'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#889893'; }}>rchumley@ecrtx.com</a>
-            </div>
-          </div>
+          ))}
           <div className="h-5 w-px shrink-0 hidden lg:block" style={{ backgroundColor: 'rgba(136,152,147,0.15)' }} />
-          <p className="text-xs hidden lg:block" style={{ color: 'rgba(136,152,147,0.5)' }}>
+          <p className="text-xs hidden lg:block" style={{ color: '#b5c5c1' }}>
             ECR // 114 W 7th St // Suite 1000 // Austin, TX 78701 //
             <a href="https://ecrtx.com" target="_blank" rel="noopener noreferrer" className="transition-colors ml-1" style={{ color: '#889893' }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = 'white'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = '#889893'; }}>ecrtx.com</a>
+              onMouseEnter={e => { e.currentTarget.style.color = 'white'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#889893'; }}>ecrtx.com</a>
           </p>
           <div className="flex-1" />
           <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Beyond Real Estate.</p>

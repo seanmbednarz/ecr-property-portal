@@ -13,6 +13,7 @@ export interface Property {
   lng: number | null;
   year_built: number | null;
   parking_ratio: string | null;
+  op_exp: number | null;
   walk_score: number | null;
   property_notes: string | null;
   sublabel: string | null;
@@ -22,6 +23,8 @@ export interface Property {
   broker_notes: string[] | null;
   scores: { pedestrian: number; cycling: number; car: number; transit: number } | null;
   client: string | null;
+  client_id: string | null;
+  client_ids?: string[];
   slug: string;
   created_at: string;
   suites?: Suite[];
@@ -50,7 +53,24 @@ export interface Broker {
   phone: string | null;
   email: string | null;
   photo_url: string | null;
+  login_password: string | null;
   display_order: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  company: string;
+  email: string | null;
+  login_password: string | null;
+  website: string | null;
+  logo_url: string | null;
+  office_address: string | null;
+  office_lat: number | null;
+  office_lng: number | null;
+  created_at: string;
+  brokers?: Broker[];
+  property_count?: number;
 }
 
 export interface Note {
@@ -60,4 +80,14 @@ export interface Note {
   content: string;
   created_at: string;
   updated_at: string;
+}
+
+export type UserRole = 'admin' | 'broker' | 'client';
+
+export interface Profile {
+  id: string;
+  role: UserRole;
+  broker_id: string | null;
+  client_id: string | null;
+  created_at: string;
 }

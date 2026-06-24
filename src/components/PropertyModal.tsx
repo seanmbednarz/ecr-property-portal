@@ -40,7 +40,7 @@ export default function PropertyModal({
       <div className="absolute inset-0 backdrop-blur-sm" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }} />
 
       <div
-        className="relative w-full max-w-6xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+        className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col shadow-2xl"
         style={{ backgroundColor: '#2a3330', border: '1px solid rgba(136,152,147,0.2)' }}
       >
         {/* Close */}

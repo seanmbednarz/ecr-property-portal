@@ -1,4 +1,4 @@
-import { Heart, MessageSquare, MapPin, Building } from 'lucide-react';
+import { Heart, MessageSquare, MapPin, Building, Pencil } from 'lucide-react';
 import { Property } from '../types';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 
@@ -9,10 +9,12 @@ interface PropertyListSidebarProps {
   notesCounts: Record<string, number>;
   typeFilter: string;
   propertyTypes: string[];
+  isAdmin?: boolean;
   onSelect: (p: Property) => void;
   onOpenDetail: (p: Property) => void;
   onTypeFilter: (t: string) => void;
   onFavoriteToggle: (id: string, current: boolean) => void;
+  onEdit?: (p: Property) => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -38,10 +40,12 @@ export default function PropertyListSidebar({
   notesCounts,
   typeFilter,
   propertyTypes,
+  isAdmin,
   onSelect,
   onOpenDetail,
   onTypeFilter,
   onFavoriteToggle,
+  onEdit,
 }: PropertyListSidebarProps) {
   return (
     <aside
@@ -151,6 +155,17 @@ export default function PropertyListSidebar({
                 >
                   View Details →
                 </button>
+                {isAdmin && onEdit && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(p); }}
+                    className="flex items-center gap-1 text-xs font-semibold mt-1 transition-colors"
+                    style={{ color: '#7a8a87' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = '#3a4a47')}
+                    onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                )}
               </div>
             </button>
           ))
