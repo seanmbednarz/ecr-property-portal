@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Upload, MapPin, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
+import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
 import { Property, Client } from '../types';
 
 interface AddPropertyModalProps {
@@ -209,6 +210,17 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
       let finalBrochureUrl: string | null = brochureUrl || null;
       if (brochureFile) {
         finalBrochureUrl = await uploadFile('brochures', `${slug}.pdf`, brochureFile);
+      }
+
+      // Internalize pasted external links into our own storage (best-effort:
+      // on failure keep the original URL so the save still succeeds).
+      if (isExternalUrl(finalHeroUrl)) {
+        try { finalHeroUrl = await internalizeRemoteUrl(finalHeroUrl!, 'property-photos', `${slug}/hero`); }
+        catch (e) { console.warn('Could not internalize hero image URL, keeping external link:', e); }
+      }
+      if (isExternalUrl(finalBrochureUrl)) {
+        try { finalBrochureUrl = await internalizeRemoteUrl(finalBrochureUrl!, 'brochures', slug); }
+        catch (e) { console.warn('Could not internalize brochure URL, keeping external link:', e); }
       }
 
       // Insert property
