@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
 import { Property, Client } from '../types';
+import { PROPERTY_TYPES, LISTING_STATUSES, statusColor } from '../lib/propertyMeta';
 
 interface EditPropertyModalProps {
   property: Property;
@@ -22,8 +23,6 @@ interface SuiteRow {
   available: string;
   tour_url: string;
 }
-
-const PROPERTY_TYPES = ['Office', 'Flex', 'Industrial', 'Retail', 'Medical', 'Mixed Use'];
 
 async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
@@ -76,7 +75,8 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
 
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState(property.address);
-  const [propertyType, setPropertyType] = useState(property.property_type);
+  const [propertyTypes, setPropertyTypes] = useState<string[]>(property.property_types?.length ? property.property_types : (property.property_type ? [property.property_type] : []));
+  const [listingStatus, setListingStatus] = useState<string[]>(property.listing_status ?? []);
   const [market, setMarket] = useState(property.market ?? '');
   const [totalSf, setTotalSf] = useState(property.total_sf != null ? String(property.total_sf) : '');
   const [classTag, setClassTag] = useState(property.sublabel ?? '');
@@ -187,7 +187,9 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
         .update({
           name: name.trim(),
           address: address.trim(),
-          property_type: propertyType,
+          property_type: propertyTypes[0] ?? 'Office',
+          property_types: propertyTypes,
+          listing_status: listingStatus,
           market: market.trim(),
           total_sf: totalSf ? parseInt(totalSf) : null,
           description: description.trim() || null,
@@ -393,14 +395,44 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
             </div>
           )}
 
-          {/* Type / Market / SF */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className={labelCls} style={labelStyle}>Type</label>
-              <select className={inp} style={inpStyle} value={propertyType} onChange={e => setPropertyType(e.target.value)} {...inpFocus}>
-                {PROPERTY_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
+          {/* Property Type (multi-select) */}
+          <div>
+            <label className={labelCls} style={labelStyle}>Property Type</label>
+            <div className="flex flex-wrap gap-1.5">
+              {PROPERTY_TYPES.map(t => {
+                const on = propertyTypes.includes(t);
+                return (
+                  <button key={t} type="button"
+                    onClick={() => setPropertyTypes(prev => on ? prev.filter(x => x !== t) : [...prev, t])}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold transition-colors"
+                    style={on ? { backgroundColor: '#d41f27', color: 'white' } : { backgroundColor: 'white', color: '#7a8a87', border: '1px solid #dedad3' }}>
+                    {t}
+                  </button>
+                );
+              })}
             </div>
+          </div>
+
+          {/* Listing Status (multi-select) */}
+          <div>
+            <label className={labelCls} style={labelStyle}>Listing Status</label>
+            <div className="flex flex-wrap gap-1.5">
+              {LISTING_STATUSES.map(s => {
+                const on = listingStatus.includes(s);
+                return (
+                  <button key={s} type="button"
+                    onClick={() => setListingStatus(prev => on ? prev.filter(x => x !== s) : [...prev, s])}
+                    className="px-2.5 py-1 rounded-full text-xs font-semibold transition-colors"
+                    style={on ? { backgroundColor: statusColor(s), color: 'white' } : { backgroundColor: 'white', color: '#7a8a87', border: '1px solid #dedad3' }}>
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Submarket / SF */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={labelCls} style={labelStyle}>Submarket</label>
               <input className={inp} style={inpStyle} value={market} onChange={e => setMarket(e.target.value)} {...inpFocus} />

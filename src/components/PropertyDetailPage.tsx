@@ -5,6 +5,7 @@ import { Property, Client } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
 import { supabase } from '../lib/supabase';
 
 function BrokerAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
@@ -256,7 +257,7 @@ export default function PropertyDetailPage({
   const currentYear = now.getFullYear();
 
   const specs: { label: string; value: string }[] = [
-    { label: 'Type', value: property.property_type },
+    { label: 'Type', value: propertyTypesOf(property).join(' / ') || '—' },
     { label: 'Submarket', value: property.market },
     { label: 'Total SF', value: fmtSF(property.total_sf) },
     ...(property.target_sf != null ? [{ label: 'Target SF', value: fmtSF(property.target_sf) }] : []),
@@ -374,11 +375,13 @@ export default function PropertyDetailPage({
                   </button>
                 </>
               )}
-              <div className="absolute top-3 left-3 flex gap-2">
-                <span className="px-2.5 py-1 rounded text-xs font-bold uppercase" style={{ backgroundColor: 'rgba(30,38,36,0.8)', color: 'white' }}>{property.property_type}</span>
-                {suites.some(s => s.available === 'Available Now') && (
-                  <span className="px-2.5 py-1 rounded text-xs font-bold uppercase" style={{ backgroundColor: '#d41f27', color: 'white' }}>For Lease</span>
-                )}
+              <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+                {propertyTypesOf(property).map(t => (
+                  <span key={t} className="px-2.5 py-1 rounded text-xs font-bold uppercase" style={{ backgroundColor: 'rgba(30,38,36,0.8)', color: 'white' }}>{t}</span>
+                ))}
+                {listingStatusOf(property).map(s => (
+                  <span key={s} className="px-2.5 py-1 rounded text-xs font-bold uppercase" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
+                ))}
               </div>
             </div>
 

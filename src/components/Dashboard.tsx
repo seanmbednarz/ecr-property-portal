@@ -13,6 +13,7 @@ import ClientsPage from './ClientsPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, X, Download, Plus } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
 
 interface DashboardProps {
   userEmail: string;
@@ -189,13 +190,13 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const selectedClient = clients.find(c => c.id === activeClientId) ?? null;
   const footerBrokers = selectedClient?.brokers ?? [];
 
-  const propertyTypes = ['All', ...Array.from(new Set(properties.map(p => p.property_type)))];
+  const propertyTypes = ['All', ...Array.from(new Set(properties.flatMap(p => propertyTypesOf(p))))];
 
   const filtered = useMemo(() => properties
     .filter(p => {
       if (activeClientId && !(p.client_ids ?? []).includes(activeClientId)) return false;
       if (showFavoritesOnly && !favorites.has(p.id)) return false;
-      if (typeFilter !== 'All' && p.property_type !== typeFilter) return false;
+      if (typeFilter !== 'All' && !propertyTypesOf(p).includes(typeFilter)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         return (
@@ -591,8 +592,10 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#d41f27' }}>{property.property_type}</span>
-            {hasAvailable && <span className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}>For Lease</span>}
+            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#d41f27' }}>{propertyTypesOf(property).join(' / ')}</span>
+            {listingStatusOf(property).map(s => (
+              <span key={s} className="text-xs font-semibold px-1.5 py-0.5 rounded" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
+            ))}
           </div>
           <h3 className="text-sm font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
           <p className="text-xs mt-0.5 truncate" style={{ color: '#7a8a87' }}>{property.address}</p>
@@ -638,9 +641,13 @@ function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavorite
         {heroSrc && <img src={heroSrc} alt="" className="w-full h-full object-cover" />}
         <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(255,255,255,0.9) 0%, transparent 55%)' }} />
         <button onClick={onClose} className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold" style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: 'white' }}>×</button>
-        <div className="absolute top-3 left-3 flex gap-1.5">
-          <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: 'rgba(42,51,48,0.8)', color: 'white' }}>{property.property_type}</span>
-          {suites.some(s => s.available === 'Available Now') && <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: '#d41f27', color: 'white' }}>For Lease</span>}
+        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+          {propertyTypesOf(property).map(t => (
+            <span key={t} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: 'rgba(42,51,48,0.8)', color: 'white' }}>{t}</span>
+          ))}
+          {listingStatusOf(property).map(s => (
+            <span key={s} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
+          ))}
         </div>
       </div>
 

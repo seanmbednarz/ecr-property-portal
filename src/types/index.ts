@@ -5,6 +5,8 @@ export interface Property {
   description: string | null;
   hero_image_url: string | null;
   property_type: string;
+  property_types?: string[] | null;
+  listing_status?: string[] | null;
   market: string;
   total_sf: number | null;
   broker_name: string;
