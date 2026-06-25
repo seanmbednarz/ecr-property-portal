@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, Upload, X, ZoomIn } from 'lucide-react';
 import { Property, Client } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
-import { Broker } from '../types';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { supabase } from '../lib/supabase';
@@ -170,25 +169,16 @@ export default function PropertyDetailPage({
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [uploadingBrochure, setUploadingBrochure] = useState(false);
   const [brochureError, setBrochureError] = useState('');
-  const [allBrokers, setAllBrokers] = useState<Broker[]>([]);
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const suites = property.suites ?? [];
-
-  useEffect(() => {
-    supabase.from('brokers').select('*').order('display_order').then(({ data }) => {
-      if (data) setAllBrokers(data);
-    });
-  }, []);
 
   const { photos, loading } = usePropertyPhotos(property.id, property.slug);
   const heroUrl = safeHttpUrl(property.hero_image_url);
   const images = heroUrl && !photos.includes(heroUrl) ? [heroUrl, ...photos] : photos;
 
-  // Footer "Prepared by" brokers only apply in a specific-client view; the
-  // "All Clients" view (no client) isn't tied to any brokers, so show none.
-  const footerBrokers = client
-    ? (property.brokers?.length ? property.brokers : allBrokers.slice(0, 2))
-    : [];
+  // "Prepared by" brokers are always the selected client's brokers. Nothing
+  // shows in the All Clients view or for a client with no brokers assigned.
+  const footerBrokers = client?.brokers ?? [];
 
   useEffect(() => {
     if (imgIdx >= images.length && images.length > 0) setImgIdx(0);

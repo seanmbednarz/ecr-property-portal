@@ -183,13 +183,11 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setSelectedProperty(null);
   }
 
-  // Brokers for the current client's footer.
-  // "All Clients" (no specific client selected) isn't tied to any brokers, so show none.
+  // Footer "Prepared by" brokers are always the selected client's brokers.
+  // Nothing shows in the All Clients view or for a client with no brokers.
   const activeClientId = effectiveClientId();
   const selectedClient = clients.find(c => c.id === activeClientId) ?? null;
-  const footerBrokers = !activeClientId
-    ? []
-    : (selectedClient?.brokers?.length ? selectedClient.brokers : brokers.slice(0, 2));
+  const footerBrokers = selectedClient?.brokers ?? [];
 
   const propertyTypes = ['All', ...Array.from(new Set(properties.map(p => p.property_type)))];
 
