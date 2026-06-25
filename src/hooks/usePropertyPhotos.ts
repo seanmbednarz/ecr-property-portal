@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { getPropertyPhotos } from '../lib/placeholders';
+import { resizeImageForUpload } from '../lib/resizeImage';
 
 export interface StoredPhoto {
   id: string;
@@ -80,7 +81,7 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
 
       const added: StoredPhoto[] = [];
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+        const file = await resizeImageForUpload(files[i]);
         const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg';
         const path = `${propertyId}/${crypto.randomUUID()}.${ext}`;
 

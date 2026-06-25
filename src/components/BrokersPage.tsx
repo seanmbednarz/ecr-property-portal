@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Upload, Phone, Mail, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { resizeImageForUpload } from '../lib/resizeImage';
 import { Broker, Client } from '../types';
 
 interface BrokersPageProps {
@@ -57,11 +58,12 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
       if (photoFile) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error('Not authenticated');
+        const uploadPhoto = await resizeImageForUpload(photoFile);
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const ext = photoFile.name.split('.').pop();
+        const ext = uploadPhoto.name.split('.').pop();
         const path = `brokers/${slug}.${ext}`;
         const form = new FormData();
-        form.append('file', photoFile);
+        form.append('file', uploadPhoto);
         form.append('path', path);
         const res = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-broker-photo`,

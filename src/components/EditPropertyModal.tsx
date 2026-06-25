@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { X, Upload, MapPin, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { resizeImageForUpload } from '../lib/resizeImage';
 import { Property, Client } from '../types';
 
 interface EditPropertyModalProps {
@@ -35,6 +36,9 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
 
 async function uploadFile(bucket: string, path: string, file: File): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
+  const resized = await resizeImageForUpload(file);
+  if (resized !== file) path = path.replace(/\.[^./\\]+$/, '.jpg'); // resized output is always jpeg
+  file = resized;
   const form = new FormData();
   form.append('file', file);
   form.append('bucket', bucket);
