@@ -96,12 +96,12 @@ function Lightbox({ images, index, onClose, onPrev, onNext, onSetIndex }: {
           </button>
         </div>
 
-        {/* Image area */}
-        <div className="relative flex items-center justify-center p-3 sm:p-4" style={{ backgroundColor: '#222a28' }}>
+        {/* Image area — fixed height so the lightbox stays the same size between photos */}
+        <div className="relative flex items-center justify-center p-3 sm:p-4" style={{ backgroundColor: '#222a28', height: '62vh' }}>
           <img
             src={images[index]}
             alt={`Photo ${index + 1}`}
-            className="max-h-[64vh] max-w-full object-contain rounded-lg"
+            className="max-h-full max-w-full object-contain rounded-lg"
             style={{ userSelect: 'none' }}
           />
 
