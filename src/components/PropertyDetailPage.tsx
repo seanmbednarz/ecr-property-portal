@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, Upload, X, ZoomIn, Pencil } from 'lucide-react';
+import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, Upload, X, ZoomIn, Pencil, Trash2 } from 'lucide-react';
 import { Property, Client } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { safeHttpUrl } from '../lib/placeholders';
@@ -47,13 +47,15 @@ function fmtMo(v: number | null | undefined) {
 
 
 
-function Lightbox({ images, index, onClose, onPrev, onNext, onSetIndex }: {
+function Lightbox({ images, index, onClose, onPrev, onNext, onSetIndex, canDelete, onDelete }: {
   images: string[];
   index: number;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
   onSetIndex: (i: number) => void;
+  canDelete?: boolean;
+  onDelete?: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -85,15 +87,30 @@ function Lightbox({ images, index, onClose, onPrev, onNext, onSetIndex }: {
           <span className="text-xs font-semibold tracking-wide" style={{ color: '#b5c5c1' }}>
             {index + 1} <span style={{ color: '#7a8a87' }}>/ {images.length}</span>
           </span>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
-            style={{ backgroundColor: '#37423f', color: '#b5c5c1' }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#d41f27'; e.currentTarget.style.color = 'white'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#37423f'; e.currentTarget.style.color = '#b5c5c1'; }}
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {canDelete && onDelete && (
+              <button
+                onClick={onDelete}
+                title="Delete this photo"
+                aria-label="Delete this photo"
+                className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+                style={{ backgroundColor: '#37423f', color: '#b5c5c1' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#d41f27'; e.currentTarget.style.color = 'white'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#37423f'; e.currentTarget.style.color = '#b5c5c1'; }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
+              style={{ backgroundColor: '#37423f', color: '#b5c5c1' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#d41f27'; e.currentTarget.style.color = 'white'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#37423f'; e.currentTarget.style.color = '#b5c5c1'; }}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Image area — fixed 3:2 frame; photos fill it (object-cover) so every one
@@ -174,7 +191,7 @@ export default function PropertyDetailPage({
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const suites = property.suites ?? [];
 
-  const { photos, loading } = usePropertyPhotos(property.id, property.slug);
+  const { photos, loading, storedPhotos, remove } = usePropertyPhotos(property.id, property.slug);
   const heroUrl = safeHttpUrl(property.hero_image_url);
   const images = heroUrl && !photos.includes(heroUrl) ? [heroUrl, ...photos] : photos;
 
@@ -190,6 +207,14 @@ export default function PropertyDetailPage({
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
   const prevImage = useCallback(() => setImgIdx(i => (i - 1 + images.length) % images.length), [images.length]);
   const nextImage = useCallback(() => setImgIdx(i => (i + 1) % images.length), [images.length]);
+  const handleDeletePhoto = useCallback(async () => {
+    const sp = storedPhotos.find(p => p.url === images[imgIdx]);
+    if (!sp) return; // only stored gallery photos are deletable here
+    const remaining = images.length - 1;
+    await remove(sp.id);
+    if (remaining <= 0) setLightboxOpen(false);
+    else setImgIdx(i => Math.min(i, remaining - 1));
+  }, [images, imgIdx, storedPhotos, remove]);
 
   async function handleBrochureUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -667,6 +692,8 @@ export default function PropertyDetailPage({
           onPrev={prevImage}
           onNext={nextImage}
           onSetIndex={setImgIdx}
+          canDelete={isAdmin && !!storedPhotos.find(p => p.url === images[imgIdx])}
+          onDelete={handleDeletePhoto}
         />
       )}
     </div>
