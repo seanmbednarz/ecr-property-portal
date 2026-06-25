@@ -482,6 +482,11 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
               if (detailProperty?.id === updated.id) setDetailProperty(updated);
               setEditProperty(null);
             }}
+            onDeleted={id => {
+              setProperties(prev => prev.filter(p => p.id !== id));
+              if (detailProperty?.id === id) setDetailProperty(null);
+              setEditProperty(null);
+            }}
             clients={clients}
           />
         )}

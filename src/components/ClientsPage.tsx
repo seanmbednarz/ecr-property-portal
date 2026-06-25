@@ -14,9 +14,10 @@ interface ClientModalProps {
   brokers: Broker[];
   onClose: () => void;
   onSaved: (c: Client) => void;
+  onDelete?: () => void;
 }
 
-function ClientModal({ client, brokers, onClose, onSaved }: ClientModalProps) {
+function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModalProps) {
   const isEdit = !!client?.id;
   const [name, setName] = useState(client?.name ?? '');
   const [company, setCompany] = useState(client?.company ?? '');
@@ -339,11 +340,20 @@ function ClientModal({ client, brokers, onClose, onSaved }: ClientModalProps) {
           {error && <p className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}>{error}</p>}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-5 py-4 shrink-0" style={{ borderTop: '1px solid #e5e1d8' }}>
-          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
-            {saving ? 'Saving…' : 'Save Client'}
-          </button>
+        <div className="flex items-center justify-between gap-3 px-5 py-4 shrink-0" style={{ borderTop: '1px solid #e5e1d8' }}>
+          {isEdit && onDelete ? (
+            <button onClick={onDelete} title="Delete client" aria-label="Delete client" className="p-2 rounded-lg transition-colors" style={{ color: '#9aaba8' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#d41f27'; e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#9aaba8'; e.currentTarget.style.backgroundColor = 'transparent'; }}>
+              <Trash2 className="w-4 h-4" />
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
+              {saving ? 'Saving…' : 'Save Client'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -384,6 +394,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
     setClients(updated);
     onClientsChange(updated);
     setConfirmDelete(null);
+    setModalClient(false);
   }
 
   function handleSaved(c: Client) {
@@ -485,7 +496,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
       </div>
 
       {modalClient !== false && (
-        <ClientModal client={modalClient} brokers={brokers} onClose={() => setModalClient(false)} onSaved={handleSaved} />
+        <ClientModal client={modalClient} brokers={brokers} onClose={() => setModalClient(false)} onSaved={handleSaved} onDelete={modalClient && (modalClient as Client).id ? () => setConfirmDelete((modalClient as Client).id!) : undefined} />
       )}
 
       {confirmDelete && (

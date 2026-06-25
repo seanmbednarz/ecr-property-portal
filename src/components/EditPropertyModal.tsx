@@ -7,6 +7,7 @@ interface EditPropertyModalProps {
   property: Property;
   onClose: () => void;
   onSaved: (property: Property) => void;
+  onDeleted?: (id: string) => void;
   clients?: Client[];
 }
 
@@ -17,6 +18,7 @@ interface SuiteRow {
   base_rent: string;
   op_exp: string;
   available: string;
+  tour_url: string;
 }
 
 const PROPERTY_TYPES = ['Office', 'Flex', 'Industrial', 'Retail', 'Medical', 'Mixed Use'];
@@ -46,10 +48,26 @@ async function uploadFile(bucket: string, path: string, file: File): Promise<str
   return json.url as string;
 }
 
-export default function EditPropertyModal({ property, onClose, onSaved, clients = [] }: EditPropertyModalProps) {
+export default function EditPropertyModal({ property, onClose, onSaved, onDeleted, clients = [] }: EditPropertyModalProps) {
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError('');
+    const { error: delErr } = await supabase.from('properties').delete().eq('id', property.id);
+    if (delErr) {
+      setError(delErr.message ?? 'Failed to delete property.');
+      setDeleting(false);
+      setConfirmDelete(false);
+      return;
+    }
+    onDeleted?.(property.id);
+    onClose();
+  }
 
   const [name, setName] = useState(property.name);
   const [address, setAddress] = useState(property.address);
@@ -92,12 +110,13 @@ export default function EditPropertyModal({ property, onClose, onSaved, clients 
       base_rent: s.base_rent != null ? String(s.base_rent) : '',
       op_exp: s.op_exp != null ? String(s.op_exp) : '',
       available: s.available ?? 'Available Now',
+      tour_url: s.tour_url ?? '',
     }))
   );
   const originalSuiteIds = useRef(new Set((property.suites ?? []).map(s => s.id)));
 
   function addSuite() {
-    setSuites(prev => [...prev, { id: null, suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now' }]);
+    setSuites(prev => [...prev, { id: null, suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now', tour_url: '' }]);
   }
   function removeSuite(idx: number) {
     setSuites(prev => prev.filter((_, i) => i !== idx));
@@ -186,6 +205,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, clients 
           base_rent: s.base_rent ? parseFloat(s.base_rent) : null,
           op_exp: s.op_exp ? parseFloat(s.op_exp) : null,
           available: s.available || 'Available Now',
+          tour_url: s.tour_url.trim() || null,
           display_order: i,
         };
         if (s.id) {
@@ -538,34 +558,40 @@ export default function EditPropertyModal({ property, onClose, onSaved, clients 
             {suites.map((suite, idx) => (
               <div
                 key={idx}
-                className="grid gap-2 p-3 rounded-xl mb-2"
-                style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8', gridTemplateColumns: '1fr 80px 90px 90px 1fr auto' }}
+                className="p-3 rounded-xl mb-2"
+                style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8' }}
               >
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Suite</p>
-                  <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.suite_name} onChange={e => updateSuite(idx, { suite_name: e.target.value })} placeholder="Suite 100" {...inpFocus} />
+                <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 80px 90px 90px 1fr auto' }}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Suite</p>
+                    <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.suite_name} onChange={e => updateSuite(idx, { suite_name: e.target.value })} placeholder="Suite 100" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>SF</p>
+                    <input type="number" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sf} onChange={e => updateSuite(idx, { sf: e.target.value })} placeholder="2,000" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Base$/SF</p>
+                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder="38.50" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
+                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Availability</p>
+                    <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.available} onChange={e => updateSuite(idx, { available: e.target.value })} placeholder="Available Now" {...inpFocus} />
+                  </div>
+                  <div className="flex items-end pb-0.5">
+                    <button onClick={() => removeSuite(idx)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#7a8a87' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#d41f27')} onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>SF</p>
-                  <input type="number" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sf} onChange={e => updateSuite(idx, { sf: e.target.value })} placeholder="2,000" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Base$/SF</p>
-                  <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder="38.50" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
-                  <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Availability</p>
-                  <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.available} onChange={e => updateSuite(idx, { available: e.target.value })} placeholder="Available Now" {...inpFocus} />
-                </div>
-                <div className="flex items-end pb-0.5">
-                  <button onClick={() => removeSuite(idx)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#7a8a87' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = '#d41f27')} onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="mt-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Virtual Tour Link</p>
+                  <input type="url" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.tour_url} onChange={e => updateSuite(idx, { tour_url: e.target.value })} placeholder="https://my.matterport.com/show/?m=…" {...inpFocus} />
                 </div>
               </div>
             ))}
@@ -577,28 +603,57 @@ export default function EditPropertyModal({ property, onClose, onSaved, clients 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 shrink-0" style={{ borderTop: '1px solid #e5e1d8' }}>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-xl text-sm font-semibold transition-colors"
-            style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundColor: '#d41f27' }}
-            onMouseEnter={e => { if (!saving) (e.currentTarget as HTMLElement).style.backgroundColor = '#b81920'; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '#d41f27'; }}
-          >
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
+        <div className="flex items-center justify-between gap-3 px-5 py-4 shrink-0" style={{ borderTop: '1px solid #e5e1d8' }}>
+          {onDeleted ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              title="Delete property"
+              aria-label="Delete property"
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: '#9aaba8' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#d41f27'; e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#9aaba8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="px-5 py-2 rounded-xl text-sm font-semibold transition-colors"
+              style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-5 py-2 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#d41f27' }}
+              onMouseEnter={e => { if (!saving) (e.currentTarget as HTMLElement).style.backgroundColor = '#b81920'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '#d41f27'; }}
+            >
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Delete confirm */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[950] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6" style={{ backgroundColor: 'white' }}>
+            <h3 className="text-sm font-bold mb-2" style={{ color: '#1e2624' }}>Delete property?</h3>
+            <p className="text-xs mb-5" style={{ color: '#7a8a87' }}>This permanently removes “{property.name}” and all its suites, photos, and client/broker links. This cannot be undone.</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmDelete(false)} disabled={deleting} className="px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ border: '1px solid #dedad3', color: '#3a4a47' }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>{deleting ? 'Deleting…' : 'Delete'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

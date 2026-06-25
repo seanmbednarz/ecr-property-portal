@@ -25,9 +25,10 @@ interface BrokerModalProps {
   broker: Partial<Broker> | null;
   onClose: () => void;
   onSaved: (b: Broker) => void;
+  onDelete?: () => void;
 }
 
-function BrokerModal({ broker, onClose, onSaved }: BrokerModalProps) {
+function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
   const isEdit = !!broker?.id;
   const [name, setName] = useState(broker?.name ?? '');
   const [title, setTitle] = useState(broker?.title ?? '');
@@ -164,11 +165,20 @@ function BrokerModal({ broker, onClose, onSaved }: BrokerModalProps) {
           {error && <p className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}>{error}</p>}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-5 py-4" style={{ borderTop: '1px solid #e5e1d8' }}>
-          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
-            {saving ? 'Saving…' : 'Save Broker'}
-          </button>
+        <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: '1px solid #e5e1d8' }}>
+          {isEdit && onDelete ? (
+            <button onClick={onDelete} title="Delete broker" aria-label="Delete broker" className="p-2 rounded-lg transition-colors" style={{ color: '#9aaba8' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#d41f27'; e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#9aaba8'; e.currentTarget.style.backgroundColor = 'transparent'; }}>
+              <Trash2 className="w-4 h-4" />
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
+              {saving ? 'Saving…' : 'Save Broker'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -197,6 +207,7 @@ export default function BrokersPage({ clients }: BrokersPageProps) {
     await supabase.from('brokers').delete().eq('id', id);
     setBrokers(prev => prev.filter(b => b.id !== id));
     setConfirmDelete(null);
+    setModalBroker(false);
   }
 
   function handleSaved(b: Broker) {
@@ -304,7 +315,7 @@ export default function BrokersPage({ clients }: BrokersPageProps) {
 
       {/* Add/Edit modal */}
       {modalBroker !== false && (
-        <BrokerModal broker={modalBroker} onClose={() => setModalBroker(false)} onSaved={handleSaved} />
+        <BrokerModal broker={modalBroker} onClose={() => setModalBroker(false)} onSaved={handleSaved} onDelete={modalBroker && (modalBroker as Broker).id ? () => setConfirmDelete((modalBroker as Broker).id!) : undefined} />
       )}
 
       {/* Delete confirm */}

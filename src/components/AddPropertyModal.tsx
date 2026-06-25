@@ -16,6 +16,7 @@ interface Suite {
   base_rent: string;
   op_exp: string;
   available: string;
+  tour_url: string;
 }
 
 const PROPERTY_TYPES = ['Office', 'Flex', 'Industrial', 'Retail', 'Medical', 'Mixed Use'];
@@ -157,7 +158,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   }
 
   function addSuite() {
-    setSuites(prev => [...prev, { suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now' }]);
+    setSuites(prev => [...prev, { suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now', tour_url: '' }]);
   }
 
   function removeSuite(idx: number) {
@@ -270,6 +271,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
           base_rent: s.base_rent ? parseFloat(s.base_rent) : null,
           op_exp: s.op_exp ? parseFloat(s.op_exp) : null,
           available: s.available || 'Available Now',
+          tour_url: s.tour_url.trim() || null,
           display_order: i,
         }));
         await supabase.from('property_suites').insert(suiteRows);
@@ -651,34 +653,40 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
             {suites.map((suite, idx) => (
               <div
                 key={idx}
-                className="grid gap-2 p-3 rounded-xl mb-2"
-                style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8', gridTemplateColumns: '1fr 80px 90px 90px 1fr auto' }}
+                className="p-3 rounded-xl mb-2"
+                style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8' }}
               >
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Suite</p>
-                  <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.suite_name} onChange={e => updateSuite(idx, { suite_name: e.target.value })} placeholder="Suite 100" {...inpFocus} />
+                <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 80px 90px 90px 1fr auto' }}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Suite</p>
+                    <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.suite_name} onChange={e => updateSuite(idx, { suite_name: e.target.value })} placeholder="Suite 100" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>SF</p>
+                    <input type="number" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sf} onChange={e => updateSuite(idx, { sf: e.target.value })} placeholder="2,000" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Base$/SF</p>
+                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder="38.50" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
+                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Availability</p>
+                    <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.available} onChange={e => updateSuite(idx, { available: e.target.value })} placeholder="Available Now" {...inpFocus} />
+                  </div>
+                  <div className="flex items-end pb-0.5">
+                    <button onClick={() => removeSuite(idx)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#7a8a87' }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#d41f27')} onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>SF</p>
-                  <input type="number" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sf} onChange={e => updateSuite(idx, { sf: e.target.value })} placeholder="2,000" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Base$/SF</p>
-                  <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder="38.50" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
-                  <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Availability</p>
-                  <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.available} onChange={e => updateSuite(idx, { available: e.target.value })} placeholder="Available Now" {...inpFocus} />
-                </div>
-                <div className="flex items-end pb-0.5">
-                  <button onClick={() => removeSuite(idx)} className="p-1.5 rounded-lg transition-colors" style={{ color: '#7a8a87' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = '#d41f27')} onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}>
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                <div className="mt-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Virtual Tour Link</p>
+                  <input type="url" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.tour_url} onChange={e => updateSuite(idx, { tour_url: e.target.value })} placeholder="https://my.matterport.com/show/?m=…" {...inpFocus} />
                 </div>
               </div>
             ))}
