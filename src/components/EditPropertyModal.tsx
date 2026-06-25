@@ -81,6 +81,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   const [totalSf, setTotalSf] = useState(property.total_sf != null ? String(property.total_sf) : '');
   const [classTag, setClassTag] = useState(property.sublabel ?? '');
   const [description, setDescription] = useState(property.description ?? '');
+  const [brokerNotes, setBrokerNotes] = useState<string[]>(property.broker_notes ?? []);
   const [lat, setLat] = useState(property.lat != null ? String(property.lat) : '');
   const [lng, setLng] = useState(property.lng != null ? String(property.lng) : '');
   const [yearBuilt, setYearBuilt] = useState(property.year_built != null ? String(property.year_built) : '');
@@ -129,6 +130,10 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   function updateSuite(idx: number, patch: Partial<SuiteRow>) {
     setSuites(prev => prev.map((s, i) => i === idx ? { ...s, ...patch } : s));
   }
+
+  function addBrokerNote() { setBrokerNotes(prev => [...prev, '']); }
+  function removeBrokerNote(idx: number) { setBrokerNotes(prev => prev.filter((_, i) => i !== idx)); }
+  function updateBrokerNote(idx: number, val: string) { setBrokerNotes(prev => prev.map((n, i) => i === idx ? val : n)); }
 
   async function handleLocate() {
     if (!address.trim()) return;
@@ -190,6 +195,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
           parking_ratio: parkingRatio.trim() || null,
           op_exp: opExp ? parseFloat(opExp) : null,
           sublabel: classTag.trim() || null,
+          broker_notes: brokerNotes.map(n => n.trim()).filter(Boolean),
         })
         .eq('id', property.id)
         .select(`*, suites:property_suites(*), brokers:property_brokers(broker:brokers(*))`)
@@ -552,6 +558,42 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
               onChange={e => setDescription(e.target.value)}
               {...inpFocus}
             />
+          </div>
+
+          {/* Broker Notes */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className={labelCls} style={{ ...labelStyle, marginBottom: 0 }}>Broker Notes</label>
+              <button
+                onClick={addBrokerNote}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
+                style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.15)')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.08)')}
+              >
+                <Plus className="w-3 h-3" /> Add Note
+              </button>
+            </div>
+            {brokerNotes.length === 0 && (
+              <p className="text-xs" style={{ color: '#9aaba8' }}>No notes — add bullet points shown under “Broker Notes” on the detail page.</p>
+            )}
+            {brokerNotes.map((note, idx) => (
+              <div key={idx} className="flex items-center gap-2 mb-2">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#d41f27' }} />
+                <input
+                  className={inp}
+                  style={{ ...inpStyle, padding: '6px 10px' }}
+                  value={note}
+                  onChange={e => updateBrokerNote(idx, e.target.value)}
+                  placeholder="e.g. Full floor (14,441 SF) opportunity in the heart of The Arboretum"
+                  {...inpFocus}
+                />
+                <button onClick={() => removeBrokerNote(idx)} className="p-1.5 rounded-lg transition-colors shrink-0" style={{ color: '#7a8a87' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#d41f27')} onMouseLeave={e => (e.currentTarget.style.color = '#7a8a87')}>
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
 
           {/* Suites */}
