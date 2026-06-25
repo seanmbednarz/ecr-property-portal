@@ -248,7 +248,6 @@ export default function EditPropertyModal({ property, onClose, onSaved, clients 
     <div
       className="fixed inset-0 z-[900] flex items-center justify-center p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="relative w-full max-w-2xl max-h-[92dvh] flex flex-col rounded-2xl overflow-hidden shadow-2xl"

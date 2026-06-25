@@ -122,7 +122,7 @@ function ClientModal({ client, brokers, onClose, onSaved }: ClientModalProps) {
         const path = `${slug}-${Date.now()}.${ext}`;
         const { error: upErr } = await supabase.storage
           .from('client-logos')
-          .upload(path, logoFile, { upsert: true, contentType: logoFile.type });
+          .upload(path, logoFile, { upsert: false, contentType: logoFile.type });
         if (upErr) throw new Error(`Logo upload failed: ${upErr.message}`);
         const { data } = supabase.storage.from('client-logos').getPublicUrl(path);
         finalLogoUrl = data.publicUrl;
@@ -176,7 +176,7 @@ function ClientModal({ client, brokers, onClose, onSaved }: ClientModalProps) {
   const lblStyle = { color: '#7a8a87' };
 
   return (
-    <div className="fixed inset-0 z-[900] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[900] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
       <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ backgroundColor: 'white', maxHeight: '90dvh' }}>
         <div className="flex items-center justify-between px-5 py-4 shrink-0" style={{ borderBottom: '1px solid #e5e1d8' }}>
           <h2 className="text-base font-extrabold uppercase tracking-wide" style={{ color: '#1e2624' }}>{isEdit ? 'Edit Client' : 'Add Client'}</h2>

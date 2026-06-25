@@ -81,10 +81,13 @@ export default function PropertyListSidebar({
           </div>
         ) : (
           properties.map((p, i) => (
-            <button
+            <div
               key={p.id}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(p)}
-              className="w-full text-left flex items-start gap-2.5 px-3 py-2.5 transition-colors duration-150 group"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(p); } }}
+              className="w-full text-left flex items-start gap-2.5 px-3 py-2.5 transition-colors duration-150 group cursor-pointer"
               style={
                 selectedId === p.id
                   ? { backgroundColor: 'rgba(212,31,39,0.05)', borderLeft: '2px solid #d41f27', borderBottom: '1px solid #f0ede8' }
@@ -167,7 +170,7 @@ export default function PropertyListSidebar({
                   </button>
                 )}
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>

@@ -105,7 +105,7 @@ function BrokerModal({ broker, onClose, onSaved }: BrokerModalProps) {
   const lblStyle = { color: '#7a8a87' };
 
   return (
-    <div className="fixed inset-0 z-[900] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[900] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
       <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl" style={{ backgroundColor: 'white' }}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #e5e1d8' }}>
           <h2 className="text-base font-extrabold uppercase tracking-wide" style={{ color: '#1e2624' }}>{isEdit ? 'Edit Broker' : 'Add Broker'}</h2>
