@@ -6,7 +6,6 @@ import PropertyListSidebar from './PropertyListSidebar';
 import MapView from './MapView';
 import PropertyDetailPage from './PropertyDetailPage';
 import NotesDrawer from './NotesDrawer';
-import FinancialAnalysis from './FinancialAnalysis';
 import AddPropertyModal from './AddPropertyModal';
 import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
@@ -277,9 +276,6 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         onTabChange={setActiveTab}
         onClientChange={isClient ? () => {} : setSelectedClientId}
       />
-
-      {/* Financial tab */}
-      {activeTab === 'financial' && <FinancialAnalysis properties={properties} />}
 
       {/* Brokers tab */}
       {activeTab === 'brokers' && <BrokersPage clients={clients} />}

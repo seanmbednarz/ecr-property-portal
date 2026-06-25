@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { Client, UserRole } from '../types';
 
-export type NavTab = 'properties' | 'financial' | 'clients' | 'brokers';
+export type NavTab = 'properties' | 'clients' | 'brokers';
 
 interface HeaderProps {
   userEmail: string;
@@ -23,7 +23,6 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 
 const ALL_TABS: { key: NavTab; label: string }[] = [
   { key: 'properties', label: 'Properties' },
-  { key: 'financial', label: 'Financial' },
   { key: 'clients', label: 'Clients' },
   { key: 'brokers', label: 'Brokers' },
 ];
@@ -35,9 +34,9 @@ export default function Header({
   const [showClientMenu, setShowClientMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Clients only see Properties + Financial
+  // Clients only see Properties
   const visibleTabs = userRole === 'client'
-    ? ALL_TABS.filter(t => t.key === 'properties' || t.key === 'financial')
+    ? ALL_TABS.filter(t => t.key === 'properties')
     : ALL_TABS;
 
   useEffect(() => {

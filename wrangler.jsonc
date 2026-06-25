@@ -1,0 +1,10 @@
+{
+  // Static-assets-only Worker: serves the Vite build output in ./dist.
+  // Same worker name as the existing deployment, so this updates the live URL.
+  "name": "ecr-property-summary",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
