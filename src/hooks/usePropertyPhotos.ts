@@ -61,10 +61,16 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
     fetchPhotos();
   }, [fetchPhotos]);
 
+  // Floor plans live in the same table under a "floorplans/" path; keep them out
+  // of the regular photo gallery and expose them separately. storedPhotos stays
+  // the full set so deletion (by url) still maps either kind.
+  const galleryPhotos = storedPhotos.filter(p => !p.storage_path.includes('floorplans/'));
+  const floorPlanUrls = storedPhotos.filter(p => p.storage_path.includes('floorplans/')).map(p => p.url);
+
   // Supabase photos take precedence; local photos are appended after stored ones
   // (deduplication not needed — local and storage URLs are always different)
-  const photos = storedPhotos.length > 0
-    ? [...storedPhotos.map(p => p.url), ...localPhotos]
+  const photos = galleryPhotos.length > 0
+    ? [...galleryPhotos.map(p => p.url), ...localPhotos]
     : localPhotos;
 
   const upload = useCallback(
@@ -129,5 +135,5 @@ export function usePropertyPhotos(propertyId: string, slug: string) {
     [storedPhotos],
   );
 
-  return { photos, storedPhotos, localPhotos, loading, uploading, upload, remove };
+  return { photos, floorPlanUrls, storedPhotos, localPhotos, loading, uploading, upload, remove };
 }

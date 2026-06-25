@@ -107,6 +107,10 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   const [newPhotoFiles, setNewPhotoFiles] = useState<File[]>([]);
   const photosInputRef = useRef<HTMLInputElement>(null);
 
+  // Floor plans (new only — existing are managed from the detail-page lightbox)
+  const [newFloorPlanFiles, setNewFloorPlanFiles] = useState<File[]>([]);
+  const floorPlansInputRef = useRef<HTMLInputElement>(null);
+
   // Suites — pre-populate from existing
   const [suites, setSuites] = useState<SuiteRow[]>(
     (property.suites ?? []).map(s => ({
@@ -260,6 +264,26 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
               created_by: user?.id ?? null,
             });
             startOrder++;
+          }
+        }
+      }
+
+      // Upload new floor plans (stored under a floorplans/ path)
+      if (newFloorPlanFiles.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        let fpOrder = 0;
+        for (const file of newFloorPlanFiles) {
+          const ext = file.name.split('.').pop();
+          const path = `${slug}/floorplans/${slug}-fp-${fpOrder + 1}.${ext}`;
+          const uploaded = await uploadFile('property-photos', path, file);
+          if (uploaded) {
+            await supabase.from('property_photos').insert({
+              property_id: property.id,
+              storage_path: uploaded.replace(/^.*\/property-photos\//, ''),
+              display_order: 1000 + fpOrder,
+              created_by: user?.id ?? null,
+            });
+            fpOrder++;
           }
         }
       }
@@ -487,6 +511,44 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
             >
               <Upload className="w-3 h-3" /> Add photos
+            </button>
+          </div>
+
+          {/* Floor Plans */}
+          <div>
+            <label className={labelCls} style={labelStyle}>Floor Plans</label>
+            {newFloorPlanFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {newFloorPlanFiles.map((f, i) => (
+                  <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden" style={{ border: '1px solid #dedad3' }}>
+                    <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setNewFloorPlanFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={floorPlansInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={e => setNewFloorPlanFiles(prev => [...prev, ...Array.from(e.target.files ?? [])].slice(0, 10))}
+            />
+            <button
+              onClick={() => floorPlansInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+              style={{ backgroundColor: '#f0ede8', color: '#3a4a47', border: '1px solid #dedad3' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#e5e1d8')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+            >
+              <Upload className="w-3 h-3" /> Add floor plans
             </button>
           </div>
 

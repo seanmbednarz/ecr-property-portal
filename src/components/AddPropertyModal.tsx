@@ -88,10 +88,12 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   const [brochureFile, setBrochureFile] = useState<File | null>(null);
   const [brochureUrl, setBrochureUrl] = useState('');
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [floorPlanFiles, setFloorPlanFiles] = useState<File[]>([]);
 
   const heroInputRef = useRef<HTMLInputElement>(null);
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const photosInputRef = useRef<HTMLInputElement>(null);
+  const floorPlansInputRef = useRef<HTMLInputElement>(null);
 
   function handleHeroFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -276,6 +278,27 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
               property_id: propData.id,
               storage_path: uploaded.replace(/^.*\/property-photos\//, ''),
               display_order: i,
+              created_by: user?.id ?? null,
+            });
+          } catch (photoErr: any) {
+            photoErrors.push(file.name);
+          }
+        }
+      }
+
+      // Upload floor plans (stored under a floorplans/ path)
+      if (floorPlanFiles.length > 0) {
+        const { data: { user } } = await supabase.auth.getUser();
+        for (let i = 0; i < floorPlanFiles.length; i++) {
+          const file = floorPlanFiles[i];
+          const ext = file.name.split('.').pop() ?? 'jpg';
+          const path = `${slug}/floorplans/${slug}-fp-${i + 1}.${ext}`;
+          try {
+            const uploaded = await uploadFile('property-photos', path, file);
+            await supabase.from('property_photos').insert({
+              property_id: propData.id,
+              storage_path: uploaded.replace(/^.*\/property-photos\//, ''),
+              display_order: 1000 + i,
               created_by: user?.id ?? null,
             });
           } catch (photoErr: any) {
@@ -577,6 +600,38 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
             >
               <Upload className="w-3 h-3" /> Add photos
+            </button>
+          </div>
+
+          {/* Floor Plans */}
+          <div>
+            <label className={labelCls} style={labelStyle}>Floor Plans</label>
+            {floorPlanFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {floorPlanFiles.map((f, i) => (
+                  <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden" style={{ border: '1px solid #dedad3' }}>
+                    <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => setFloorPlanFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input ref={floorPlansInputRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={e => setFloorPlanFiles(prev => [...prev, ...Array.from(e.target.files ?? [])].slice(0, 10))} />
+            <button
+              onClick={() => floorPlansInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+              style={{ backgroundColor: '#f0ede8', color: '#3a4a47', border: '1px solid #dedad3' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#e5e1d8')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+            >
+              <Upload className="w-3 h-3" /> Add floor plans
             </button>
           </div>
 

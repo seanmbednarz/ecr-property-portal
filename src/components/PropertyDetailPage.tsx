@@ -191,9 +191,11 @@ export default function PropertyDetailPage({
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const suites = property.suites ?? [];
 
-  const { photos, loading, storedPhotos, remove } = usePropertyPhotos(property.id, property.slug);
+  const { photos, floorPlanUrls, loading, storedPhotos, remove } = usePropertyPhotos(property.id, property.slug);
   const heroUrl = safeHttpUrl(property.hero_image_url);
   const images = heroUrl && !photos.includes(heroUrl) ? [heroUrl, ...photos] : photos;
+  const [lightboxMode, setLightboxMode] = useState<'photos' | 'floorplans'>('photos');
+  const lightboxImages = lightboxMode === 'floorplans' ? floorPlanUrls : images;
 
   // "Prepared by" brokers are always the selected client's brokers. Nothing
   // shows in the All Clients view or for a client with no brokers assigned.
@@ -203,18 +205,19 @@ export default function PropertyDetailPage({
     if (imgIdx >= images.length && images.length > 0) setImgIdx(0);
   }, [images.length]);
 
-  const openLightbox = useCallback((i: number) => { setImgIdx(i); setLightboxOpen(true); }, []);
+  const openLightbox = useCallback((i: number) => { setLightboxMode('photos'); setImgIdx(i); setLightboxOpen(true); }, []);
+  const openFloorPlanLightbox = useCallback((i: number) => { setLightboxMode('floorplans'); setImgIdx(i); setLightboxOpen(true); }, []);
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
-  const prevImage = useCallback(() => setImgIdx(i => (i - 1 + images.length) % images.length), [images.length]);
-  const nextImage = useCallback(() => setImgIdx(i => (i + 1) % images.length), [images.length]);
+  const prevImage = useCallback(() => setImgIdx(i => (i - 1 + lightboxImages.length) % lightboxImages.length), [lightboxImages.length]);
+  const nextImage = useCallback(() => setImgIdx(i => (i + 1) % lightboxImages.length), [lightboxImages.length]);
   const handleDeletePhoto = useCallback(async () => {
-    const sp = storedPhotos.find(p => p.url === images[imgIdx]);
-    if (!sp) return; // only stored gallery photos are deletable here
-    const remaining = images.length - 1;
+    const sp = storedPhotos.find(p => p.url === lightboxImages[imgIdx]);
+    if (!sp) return; // only stored photos / floor plans are deletable here
+    const remaining = lightboxImages.length - 1;
     await remove(sp.id);
     if (remaining <= 0) setLightboxOpen(false);
     else setImgIdx(i => Math.min(i, remaining - 1));
-  }, [images, imgIdx, storedPhotos, remove]);
+  }, [lightboxImages, imgIdx, storedPhotos, remove]);
 
   async function handleBrochureUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -402,6 +405,27 @@ export default function PropertyDetailPage({
                 ))
               )}
             </div>
+
+            {/* Floor plans */}
+            {!loading && floorPlanUrls.length > 0 && (
+              <div className="mt-5">
+                <h3 className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: '#7a8a87' }}>Floor Plans</h3>
+                <div className="flex flex-wrap gap-2">
+                  {floorPlanUrls.map((src, i) => (
+                    <button
+                      key={i}
+                      onClick={() => openFloorPlanLightbox(i)}
+                      className="rounded-lg overflow-hidden transition-all duration-150 cursor-zoom-in"
+                      style={{ width: 80, height: 80, border: '2px solid transparent', backgroundColor: '#e8e4dc' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = '#d41f27')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}
+                    >
+                      <img src={src} alt={`Floor plan ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Key info */}
@@ -686,13 +710,13 @@ export default function PropertyDetailPage({
       {/* Lightbox */}
       {lightboxOpen && (
         <Lightbox
-          images={images}
+          images={lightboxImages}
           index={imgIdx}
           onClose={closeLightbox}
           onPrev={prevImage}
           onNext={nextImage}
           onSetIndex={setImgIdx}
-          canDelete={isAdmin && !!storedPhotos.find(p => p.url === images[imgIdx])}
+          canDelete={isAdmin && !!storedPhotos.find(p => p.url === lightboxImages[imgIdx])}
           onDelete={handleDeletePhoto}
         />
       )}
