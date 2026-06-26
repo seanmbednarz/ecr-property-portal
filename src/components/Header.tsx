@@ -34,10 +34,13 @@ export default function Header({
   const [showClientMenu, setShowClientMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Clients only see Properties
+  // Clients see only Properties; brokers see Properties + Clients (no Brokers tab);
+  // admins see everything.
   const visibleTabs = userRole === 'client'
     ? ALL_TABS.filter(t => t.key === 'properties')
-    : ALL_TABS;
+    : userRole === 'broker'
+      ? ALL_TABS.filter(t => t.key !== 'brokers')
+      : ALL_TABS;
 
   useEffect(() => {
     if (!showClientMenu) return;

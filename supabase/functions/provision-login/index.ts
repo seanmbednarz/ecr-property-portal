@@ -36,15 +36,12 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Only admins may mint logins.
   const { data: callerProfile } = await admin
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .maybeSingle();
-  if (callerProfile?.role !== "admin") {
-    return json({ error: "Forbidden: admin role required" }, 403);
-  }
+  const callerRole = callerProfile?.role;
 
   let payload: {
     email?: string;
@@ -69,6 +66,12 @@ Deno.serve(async (req: Request) => {
   }
   if (role !== "broker" && role !== "client") {
     return json({ error: "role must be 'broker' or 'client'" }, 400);
+  }
+
+  // Admins may mint any login; brokers may mint client logins only.
+  const allowed = callerRole === "admin" || (callerRole === "broker" && role === "client");
+  if (!allowed) {
+    return json({ error: "Forbidden: not permitted to create this login" }, 403);
   }
 
   // Clients are scoped to a client_id; brokers to a broker_id.
