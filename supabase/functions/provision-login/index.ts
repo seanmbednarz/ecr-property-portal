@@ -46,7 +46,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Forbidden: admin role required" }, 403);
   }
 
-  let payload: { email?: string; password?: string; broker_id?: string };
+  let payload: {
+    email?: string;
+    password?: string;
+    role?: string;
+    broker_id?: string | null;
+    client_id?: string | null;
+  };
   try {
     payload = await req.json();
   } catch {
@@ -55,12 +61,19 @@ Deno.serve(async (req: Request) => {
 
   const email = payload.email?.trim().toLowerCase();
   const password = payload.password?.trim();
-  const broker_id = payload.broker_id ?? null;
+  const role = payload.role;
 
   if (!email) return json({ error: "Missing email" }, 400);
   if (!password || password.length < 6) {
     return json({ error: "Password must be at least 6 characters" }, 400);
   }
+  if (role !== "broker" && role !== "client") {
+    return json({ error: "role must be 'broker' or 'client'" }, 400);
+  }
+
+  // Clients are scoped to a client_id; brokers to a broker_id.
+  const broker_id = role === "broker" ? (payload.broker_id ?? null) : null;
+  const client_id = role === "client" ? (payload.client_id ?? null) : null;
 
   // Create the auth user, or update the password if it already exists.
   let userId: string | null = null;
@@ -92,11 +105,11 @@ Deno.serve(async (req: Request) => {
     created = true;
   }
 
-  // Ensure the profile is a broker linked to this broker record
-  // (overrides the @ecrtx.com -> admin default from handle_new_user).
+  // Force the profile to the intended role + link, overriding the
+  // handle_new_user default (which keys role off the @ecrtx.com domain).
   const { error: profErr } = await admin
     .from("profiles")
-    .upsert({ id: userId, role: "broker", broker_id }, { onConflict: "id" });
+    .upsert({ id: userId, role, broker_id, client_id }, { onConflict: "id" });
   if (profErr) return json({ error: profErr.message }, 500);
 
   return json({ ok: true, user_id: userId, created });

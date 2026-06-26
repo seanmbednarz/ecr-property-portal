@@ -22,7 +22,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [name, setName] = useState(client?.name ?? '');
   const [company, setCompany] = useState(client?.company ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
-  const [password, setPassword] = useState(client?.login_password ?? 'demo');
+  const [password, setPassword] = useState(client?.login_password ?? 'client2026');
   const [website, setWebsite] = useState(client?.website ?? '');
   const [logoUrl, setLogoUrl] = useState(client?.logo_url ?? '');
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -133,7 +133,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         name: name.trim(),
         company: company.trim(),
         email: email.trim() || null,
-        login_password: password.trim() || 'demo',
+        login_password: password.trim() || 'client2026',
         website: website.trim() || null,
         logo_url: finalLogoUrl,
         office_address: officeAddress.trim() || null,
@@ -157,6 +157,26 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
       if (selectedBrokers.size > 0) {
         const rows = Array.from(selectedBrokers).map(broker_id => ({ client_id: savedClient.id, broker_id }));
         await supabase.from('client_brokers').insert(rows);
+      }
+
+      // Provision (or update) the client's actual login account so they can sign in
+      // with their email + password and see only their property summary.
+      if (payload.email && payload.login_password) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const res = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-login`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({ email: payload.email, password: payload.login_password, role: 'client', client_id: savedClient.id }),
+            }
+          );
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(`Client saved, but login setup failed: ${j.error ?? res.statusText}`);
+          }
+        }
       }
 
       savedClient.brokers = brokers.filter(b => selectedBrokers.has(b.id));

@@ -101,11 +101,11 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-broker-login`,
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-login`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ email: payload.email, password: payload.login_password, broker_id: saved.id }),
+              body: JSON.stringify({ email: payload.email, password: payload.login_password, role: 'broker', broker_id: saved.id }),
             }
           );
           if (!res.ok) {
