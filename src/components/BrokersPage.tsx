@@ -83,15 +83,39 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         photo_url: finalPhotoUrl,
       };
 
+      let saved: Broker;
       if (isEdit && broker?.id) {
         const { data, error: dbErr } = await supabase.from('brokers').update(payload).eq('id', broker.id).select().single();
         if (dbErr) throw dbErr;
-        onSaved(data as Broker);
+        saved = data as Broker;
       } else {
         const { data, error: dbErr } = await supabase.from('brokers').insert({ ...payload, display_order: 99 }).select().single();
         if (dbErr) throw dbErr;
-        onSaved(data as Broker);
+        saved = data as Broker;
       }
+
+      // Provision (or update) the broker's actual login account so they can sign in
+      // with their email + password. The Supabase login uses Auth, not this table,
+      // so without this step the saved password would never let them in.
+      if (payload.email && payload.login_password) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const res = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-broker-login`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+              body: JSON.stringify({ email: payload.email, password: payload.login_password, broker_id: saved.id }),
+            }
+          );
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            throw new Error(`Broker saved, but login setup failed: ${j.error ?? res.statusText}`);
+          }
+        }
+      }
+
+      onSaved(saved);
     } catch (err: any) {
       setError(err.message ?? 'Failed to save.');
       setSaving(false);
