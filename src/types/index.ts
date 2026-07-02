@@ -72,6 +72,7 @@ export interface Client {
   office_lng: number | null;
   created_at: string;
   brokers?: Broker[];
+  lead_broker_id?: string | null;
   property_count?: number;
 }
 

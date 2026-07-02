@@ -557,7 +557,7 @@ export default function PropertyDetailPage({
 
             {property.broker_notes && property.broker_notes.length > 0 && (
               <>
-                <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#7a8a87' }}>Broker Notes</h2>
+                <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#7a8a87' }}>Property Notes</h2>
                 <ul className="space-y-2 mb-6">
                   {property.broker_notes.map((note, i) => (
                     <li key={i} className="flex gap-2.5 text-sm" style={{ color: '#3a4a47' }}>

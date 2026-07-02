@@ -15,6 +15,7 @@ import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
 import { formatAddress } from '../lib/geocode';
+import { mapClientBrokers } from '../lib/clientBrokers';
 
 interface DashboardProps {
   userEmail: string;
@@ -128,7 +129,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   async function fetchClients() {
     let query = supabase
       .from('clients')
-      .select(`*, brokers:client_brokers(broker:brokers(*))`)
+      .select(`*, brokers:client_brokers(is_lead, broker:brokers(*))`)
       .order('created_at');
     // Brokers only see clients assigned to them
     if (isBroker && profile?.broker_id) {
@@ -142,11 +143,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     }
     const { data } = await query;
     if (data) {
-      const mapped = (data as any[]).map(c => ({
-        ...c,
-        brokers: (c.brokers ?? []).map((cb: any) => cb.broker).filter(Boolean),
-      }));
-      setClients(mapped);
+      setClients((data as any[]).map(c => mapClientBrokers(c)));
     }
   }
 
@@ -663,7 +660,7 @@ function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavorite
 
         {property.broker_notes && property.broker_notes.length > 0 && (
           <div style={{ borderTop: '1px solid #e5e1d8', paddingTop: 10 }}>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: '#7a8a87' }}>Broker Notes</p>
+            <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: '#7a8a87' }}>Property Notes</p>
             <ul className="space-y-1.5">
               {property.broker_notes.map((note, i) => (
                 <li key={i} className="flex gap-2 text-xs leading-relaxed" style={{ color: '#3a4a47' }}>

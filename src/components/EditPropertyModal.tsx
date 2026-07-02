@@ -720,7 +720,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
           {/* Broker Notes */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className={labelCls} style={{ ...labelStyle, marginBottom: 0 }}>Broker Notes</label>
+              <label className={labelCls} style={{ ...labelStyle, marginBottom: 0 }}>Property Notes</label>
               <button
                 onClick={addBrokerNote}
                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
@@ -732,7 +732,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
               </button>
             </div>
             {brokerNotes.length === 0 && (
-              <p className="text-xs" style={{ color: '#9aaba8' }}>No notes — add bullet points shown under “Broker Notes” on the detail page.</p>
+              <p className="text-xs" style={{ color: '#9aaba8' }}>No notes — add bullet points shown under “Property Notes” on the detail page.</p>
             )}
             {brokerNotes.map((note, idx) => (
               <div key={idx} className="flex items-center gap-2 mb-2">

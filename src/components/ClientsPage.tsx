@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Upload, X, ExternalLink, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { mapClientBrokers } from '../lib/clientBrokers';
 import { Broker, Client } from '../types';
 
 interface ClientsPageProps {
@@ -39,6 +40,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(
     new Set(client?.brokers?.map(b => b.id) ?? [])
   );
+  const [leadBrokerId, setLeadBrokerId] = useState<string | null>(client?.lead_broker_id ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const logoFileRef = useRef<HTMLInputElement>(null);
@@ -63,7 +65,12 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   function toggleBroker(id: string) {
     setSelectedBrokers(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        setLeadBrokerId(cur => (cur === id ? null : cur));
+      } else {
+        next.add(id);
+      }
       return next;
     });
   }
@@ -155,7 +162,11 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
       }
 
       if (selectedBrokers.size > 0) {
-        const rows = Array.from(selectedBrokers).map(broker_id => ({ client_id: savedClient.id, broker_id }));
+        const rows = Array.from(selectedBrokers).map(broker_id => ({
+          client_id: savedClient.id,
+          broker_id,
+          is_lead: broker_id === leadBrokerId,
+        }));
         await supabase.from('client_brokers').insert(rows);
       }
 
@@ -179,7 +190,10 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         }
       }
 
-      savedClient.brokers = brokers.filter(b => selectedBrokers.has(b.id));
+      savedClient.brokers = brokers
+        .filter(b => selectedBrokers.has(b.id))
+        .sort((a, b) => Number(b.id === leadBrokerId) - Number(a.id === leadBrokerId));
+      savedClient.lead_broker_id = selectedBrokers.has(leadBrokerId ?? '') ? leadBrokerId : null;
       onSaved(savedClient);
     } catch (err: any) {
       setError(err.message ?? 'Failed to save.');
@@ -340,20 +354,40 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
               <label className={lbl} style={lblStyle}>Assign Broker(s)</label>
               <div className="space-y-2">
                 {brokers.map(b => (
-                  <label key={b.id} className="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedBrokers.has(b.id)}
-                      onChange={() => toggleBroker(b.id)}
-                      className="w-4 h-4 rounded"
-                      style={{ accentColor: '#d41f27' }}
-                    />
-                    <span className="text-sm" style={{ color: '#1e2624' }}>
-                      {b.name}{b.title ? <span style={{ color: '#7a8a87' }}> · {b.title}</span> : ''}
-                    </span>
-                  </label>
+                  <div key={b.id} className="flex items-center justify-between gap-2.5">
+                    <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedBrokers.has(b.id)}
+                        onChange={() => toggleBroker(b.id)}
+                        className="w-4 h-4 rounded"
+                        style={{ accentColor: '#d41f27' }}
+                      />
+                      <span className="text-sm" style={{ color: '#1e2624' }}>
+                        {b.name}{b.title ? <span style={{ color: '#7a8a87' }}> · {b.title}</span> : ''}
+                      </span>
+                    </label>
+                    {selectedBrokers.has(b.id) && (
+                      <label
+                        className="flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={leadBrokerId === b.id
+                          ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.3)' }
+                          : { color: '#9aaba8', border: '1px solid #dedad3' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={leadBrokerId === b.id}
+                          onChange={() => setLeadBrokerId(cur => (cur === b.id ? null : b.id))}
+                          className="w-3 h-3 rounded"
+                          style={{ accentColor: '#d41f27' }}
+                        />
+                        Lead
+                      </label>
+                    )}
+                  </div>
                 ))}
               </div>
+              <p className="text-xs mt-1.5" style={{ color: '#9aaba8' }}>The lead broker is listed first wherever brokers appear.</p>
             </div>
           )}
 
@@ -391,13 +425,10 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
   async function fetchClients() {
     const { data } = await supabase
       .from('clients')
-      .select(`*, brokers:client_brokers(broker:brokers(*))`)
+      .select(`*, brokers:client_brokers(is_lead, broker:brokers(*))`)
       .order('created_at');
     if (data) {
-      const mapped = (data as any[]).map(c => ({
-        ...c,
-        brokers: (c.brokers ?? []).map((cb: any) => cb.broker).filter(Boolean),
-      }));
+      const mapped = (data as any[]).map(c => mapClientBrokers(c));
       setClients(mapped);
       onClientsChange(mapped);
     }
@@ -492,7 +523,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
                       <div className="flex items-center gap-1 flex-wrap">
                         {(c.brokers ?? []).map(b => (
                           <span key={b.id} className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#b81920' }}>
-                            {b.name.split(' ')[0]} {b.name.split(' ').slice(1).join(' ')}
+                            {c.lead_broker_id === b.id && '★ '}{b.name.split(' ')[0]} {b.name.split(' ').slice(1).join(' ')}
                           </span>
                         ))}
                         {(!c.brokers || c.brokers.length === 0) && <span className="text-xs" style={{ color: '#9aaba8' }}>—</span>}
