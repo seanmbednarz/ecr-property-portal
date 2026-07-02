@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Upload, X, ExternalLink, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { mapClientBrokers } from '../lib/clientBrokers';
+import { AddressSuggestion, searchAddresses } from '../lib/geocode';
 import { Broker, Client } from '../types';
 
 interface ClientsPageProps {
@@ -32,7 +33,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [officeAddress, setOfficeAddress] = useState(client?.office_address ?? '');
   const [officeLat, setOfficeLat] = useState(client?.office_lat != null ? String(client.office_lat) : '');
   const [officeLng, setOfficeLng] = useState(client?.office_lng != null ? String(client.office_lng) : '');
-  const [geoSuggestions, setGeoSuggestions] = useState<{ display_name: string; lat: string; lon: string }[]>([]);
+  const [geoSuggestions, setGeoSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const geoDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,11 +84,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
     geoDebounceRef.current = setTimeout(async () => {
       setGeoLoading(true);
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=0`,
-          { headers: { 'Accept-Language': 'en' } }
-        );
-        const data = await res.json();
+        const data = await searchAddresses(q);
         setGeoSuggestions(data);
         setShowSuggestions(data.length > 0);
       } catch {
@@ -110,10 +107,10 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
-  function selectSuggestion(s: { display_name: string; lat: string; lon: string }) {
-    setOfficeAddress(s.display_name);
-    setOfficeLat(parseFloat(s.lat).toFixed(6));
-    setOfficeLng(parseFloat(s.lon).toFixed(6));
+  function selectSuggestion(s: AddressSuggestion) {
+    setOfficeAddress(s.label);
+    setOfficeLat(s.lat.toFixed(6));
+    setOfficeLng(s.lng.toFixed(6));
     setShowSuggestions(false);
     setGeoSuggestions([]);
   }
@@ -284,7 +281,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
                       onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
                     >
                       <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#d41f27' }} />
-                      <span className="text-xs leading-relaxed" style={{ color: '#3a4a47' }}>{s.display_name}</span>
+                      <span className="text-xs leading-relaxed" style={{ color: '#3a4a47' }}>{s.label}</span>
                     </button>
                   ))}
                 </div>
