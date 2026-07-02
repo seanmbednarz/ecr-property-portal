@@ -661,6 +661,20 @@ function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavorite
 
         {property.description && <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#3a4a47', borderTop: '1px solid #e5e1d8', paddingTop: 10 }}>{property.description}</p>}
 
+        {property.broker_notes && property.broker_notes.length > 0 && (
+          <div style={{ borderTop: '1px solid #e5e1d8', paddingTop: 10 }}>
+            <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: '#7a8a87' }}>Broker Notes</p>
+            <ul className="space-y-1.5">
+              {property.broker_notes.map((note, i) => (
+                <li key={i} className="flex gap-2 text-xs leading-relaxed" style={{ color: '#3a4a47' }}>
+                  <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#d41f27' }} />
+                  {note}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-px rounded-lg overflow-hidden" style={{ backgroundColor: '#dedad3' }}>
           {[
             { label: 'Size', value: property.total_sf ? `${property.total_sf.toLocaleString()} SF` : '—' },
