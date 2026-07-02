@@ -1,6 +1,7 @@
 import { X, MapPin, Heart, MessageSquare, ExternalLink, Download } from 'lucide-react';
 import { Property } from '../types';
 import { safeHttpUrl } from '../lib/placeholders';
+import { formatAddress } from '../lib/geocode';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 
 interface PropertyModalProps {
@@ -75,7 +76,7 @@ export default function PropertyModal({
               <h2 className="text-white text-2xl sm:text-3xl font-bold leading-tight">{property.name}</h2>
               <div className="flex items-center gap-1.5 text-sm mt-1.5" style={{ color: '#b5c5c1' }}>
                 <MapPin className="w-3.5 h-3.5 shrink-0" style={{ color: '#889893' }} />
-                {property.address}
+                {formatAddress(property.address)}
               </div>
             </div>
           </div>
@@ -140,7 +141,7 @@ export default function PropertyModal({
 
             {/* Description */}
             {property.description && (
-              <p className="leading-relaxed text-sm sm:text-base" style={{ color: '#b5c5c1' }}>
+              <p className="leading-relaxed text-sm sm:text-base whitespace-pre-line" style={{ color: '#b5c5c1' }}>
                 {property.description}
               </p>
             )}

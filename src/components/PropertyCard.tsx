@@ -1,6 +1,7 @@
 import { Heart, MessageSquare, MapPin, ChevronRight } from 'lucide-react';
 import { Property } from '../types';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import { formatAddress } from '../lib/geocode';
 
 interface PropertyCardProps {
   property: Property;
@@ -79,7 +80,7 @@ export default function PropertyCard({
           </h3>
           <div className="flex items-start gap-1.5 text-sm mb-3" style={{ color: '#889893' }}>
             <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#889893' }} />
-            <span className="leading-snug">{property.address}</span>
+            <span className="leading-snug">{formatAddress(property.address)}</span>
           </div>
           <p className="text-sm line-clamp-2 leading-relaxed" style={{ color: 'rgba(181,197,193,0.6)' }}>
             {property.description}

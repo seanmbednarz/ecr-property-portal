@@ -63,6 +63,59 @@ export async function searchAddresses(query: string): Promise<AddressSuggestion[
   return out.slice(0, 5);
 }
 
+const STATE_ABBR: Record<string, string> = {
+  Alabama: 'AL', Alaska: 'AK', Arizona: 'AZ', Arkansas: 'AR', California: 'CA',
+  Colorado: 'CO', Connecticut: 'CT', Delaware: 'DE', Florida: 'FL', Georgia: 'GA',
+  Hawaii: 'HI', Idaho: 'ID', Illinois: 'IL', Indiana: 'IN', Iowa: 'IA',
+  Kansas: 'KS', Kentucky: 'KY', Louisiana: 'LA', Maine: 'ME', Maryland: 'MD',
+  Massachusetts: 'MA', Michigan: 'MI', Minnesota: 'MN', Mississippi: 'MS', Missouri: 'MO',
+  Montana: 'MT', Nebraska: 'NE', Nevada: 'NV', 'New Hampshire': 'NH', 'New Jersey': 'NJ',
+  'New Mexico': 'NM', 'New York': 'NY', 'North Carolina': 'NC', 'North Dakota': 'ND', Ohio: 'OH',
+  Oklahoma: 'OK', Oregon: 'OR', Pennsylvania: 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', Tennessee: 'TN', Texas: 'TX', Utah: 'UT', Vermont: 'VT',
+  Virginia: 'VA', Washington: 'WA', 'West Virginia': 'WV', Wisconsin: 'WI', Wyoming: 'WY',
+  'District of Columbia': 'DC',
+};
+
+/**
+ * Normalize a verbose Nominatim display_name already stored in the DB
+ * ("311, East Saint Elmo Road, Southpark, Austin, Travis County, Texas,
+ * 78745, United States") down to "311 East Saint Elmo Road, Austin, TX 78745".
+ * Strings that don't look like that pattern are returned untouched.
+ */
+export function formatAddress(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length < 5 || parts[parts.length - 1] !== 'United States') return raw;
+  parts.pop();
+
+  const zipIdx = parts.findIndex(p => /^\d{5}(-\d{4})?$/.test(p));
+  const zip = zipIdx !== -1 ? parts[zipIdx] : '';
+  const stateIdx = zipIdx > 0 ? zipIdx - 1 : parts.length - 1;
+  const state = STATE_ABBR[parts[stateIdx]] ?? parts[stateIdx];
+
+  // Street: leading house number gets joined onto the road name. A POI name
+  // ahead of the house number ("Ignite Outdoor Kitchens, 311, ...") is dropped.
+  const isHouseNum = (p: string) => /^\d+[A-Za-z]?(-\d+)?$/.test(p);
+  let street = parts[0];
+  let streetEnd = 0;
+  if (isHouseNum(parts[0]) && parts.length > 1) {
+    street = `${parts[0]} ${parts[1]}`;
+    streetEnd = 1;
+  } else if (parts.length > 2 && isHouseNum(parts[1])) {
+    street = `${parts[1]} ${parts[2]}`;
+    streetEnd = 2;
+  }
+
+  // City: the element just before the county (or before the state when no
+  // county is present). Neighborhoods between road and city fall away.
+  const countyIdx = parts.findIndex(p => /County$/.test(p) || /Parish$/.test(p));
+  const cityIdx = (countyIdx > 0 ? countyIdx : stateIdx) - 1;
+  const city = cityIdx > streetEnd ? parts[cityIdx] : '';
+
+  return [street, city, `${state} ${zip}`.trim()].filter(Boolean).join(', ');
+}
+
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
     // Prefer an exact street-address match; fall back to an unrestricted

@@ -7,6 +7,7 @@ import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
 import { supabase } from '../lib/supabase';
+import { formatAddress } from '../lib/geocode';
 
 function BrokerAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
   const initials = name.split(' ').filter(w => /^[A-Z]/.test(w)).map(w => w[0]).slice(0, 2).join('');
@@ -441,7 +442,7 @@ export default function PropertyDetailPage({
             </h1>
             <div className="flex items-center gap-1.5 mb-5" style={{ color: '#7a8a87' }}>
               <MapPin className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-sm">{property.address}</span>
+              <span className="text-sm">{formatAddress(property.address)}</span>
             </div>
 
             {/* Stats grid */}
@@ -538,7 +539,7 @@ export default function PropertyDetailPage({
             {property.description && (
               <>
                 <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#7a8a87' }}>Overview</h2>
-                <p className="text-sm leading-relaxed mb-6" style={{ color: '#3a4a47' }}>{property.description}</p>
+                <p className="text-sm leading-relaxed mb-6 whitespace-pre-line" style={{ color: '#3a4a47' }}>{property.description}</p>
               </>
             )}
 

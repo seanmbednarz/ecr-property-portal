@@ -14,6 +14,7 @@ import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, X, Download, Pl
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
+import { formatAddress } from '../lib/geocode';
 
 interface DashboardProps {
   userEmail: string;
@@ -598,7 +599,7 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
             ))}
           </div>
           <h3 className="text-sm font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
-          <p className="text-xs mt-0.5 truncate" style={{ color: '#7a8a87' }}>{property.address}</p>
+          <p className="text-xs mt-0.5 truncate" style={{ color: '#7a8a87' }}>{formatAddress(property.address)}</p>
           {property.total_sf && <p className="text-xs mt-1 tabular-nums font-medium" style={{ color: '#3a4a47' }}>{property.total_sf.toLocaleString()} SF</p>}
         </div>
         <button onClick={onClose} className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f0ede8', color: '#7a8a87' }}>
@@ -655,10 +656,10 @@ function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavorite
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#d41f27' }}>{property.market}</p>
           <h3 className="text-lg font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
-          <p className="text-xs mt-1" style={{ color: '#7a8a87' }}>{property.address}</p>
+          <p className="text-xs mt-1" style={{ color: '#7a8a87' }}>{formatAddress(property.address)}</p>
         </div>
 
-        {property.description && <p className="text-xs leading-relaxed" style={{ color: '#3a4a47', borderTop: '1px solid #e5e1d8', paddingTop: 10 }}>{property.description}</p>}
+        {property.description && <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: '#3a4a47', borderTop: '1px solid #e5e1d8', paddingTop: 10 }}>{property.description}</p>}
 
         <div className="grid grid-cols-2 gap-px rounded-lg overflow-hidden" style={{ backgroundColor: '#dedad3' }}>
           {[
