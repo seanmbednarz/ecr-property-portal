@@ -10,7 +10,7 @@ import AddPropertyModal from './AddPropertyModal';
 import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
-import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, X, Download, Plus } from 'lucide-react';
+import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, MapPin, Pencil, X, Download, Plus } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
@@ -59,6 +59,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const [sortKey, setSortKey] = useState<SortKey>('featured');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('list');
+  const [desktopView, setDesktopView] = useState<'map' | 'list'>('map');
   const [activeTab, setActiveTab] = useState<NavTab>('properties');
   const [showAddProperty, setShowAddProperty] = useState(false);
   const [editProperty, setEditProperty] = useState<Property | null>(null);
@@ -339,8 +340,24 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             Showing <span style={{ color: '#3a4a47' }}>{filtered.length}</span> / {properties.length}
           </span>
 
+          {/* Map / List view toggle — desktop only */}
+          <div className="hidden md:flex ml-auto rounded-lg overflow-hidden shrink-0" style={{ border: '1px solid #dedad3' }}>
+            {([['map', MapIcon, 'Map'], ['list', LayoutList, 'List']] as const).map(([key, Icon, label]) => (
+              <button
+                key={key}
+                onClick={() => setDesktopView(key)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors"
+                style={desktopView === key
+                  ? { backgroundColor: '#d41f27', color: 'white' }
+                  : { backgroundColor: 'white', color: '#7a8a87' }}
+              >
+                <Icon className="w-3.5 h-3.5" /> {label}
+              </button>
+            ))}
+          </div>
+
           {/* Sort */}
-          <div className="relative ml-auto" style={{ zIndex: 1500 }} onClick={e => e.stopPropagation()}>
+          <div className="relative ml-auto md:ml-0" style={{ zIndex: 1500 }} onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setShowSortMenu(v => !v)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
@@ -434,6 +451,26 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                   : null
               }
             />
+            {/* List view — overlays the map (desktop only) so toggling back is instant */}
+            {desktopView === 'list' && (
+              <div className="absolute inset-0 z-[500] hidden md:block overflow-y-auto" style={{ backgroundColor: '#f0ede8' }}>
+                <div className="p-4 grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3">
+                  {filtered.map(p => (
+                    <ListViewCard
+                      key={p.id}
+                      property={p}
+                      selected={selectedProperty?.id === p.id}
+                      onSelect={() => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
+                      onOpenDetail={() => setDetailProperty(p)}
+                      onEdit={(isAdmin || isBroker) ? () => setEditProperty(p) : undefined}
+                    />
+                  ))}
+                  {filtered.length === 0 && (
+                    <p className="col-span-full text-sm text-center py-16" style={{ color: '#9aaba8' }}>No properties match the current filters.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {selectedProperty && (
@@ -610,6 +647,87 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
             <Download className="w-4 h-4" />
           </a>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ListViewCard — photo card for the desktop List view
+// ---------------------------------------------------------------------------
+interface ListViewCardProps {
+  property: Property;
+  selected: boolean;
+  onSelect: () => void;
+  onOpenDetail: () => void;
+  onEdit?: () => void;
+}
+
+function ListViewCard({ property, selected, onSelect, onOpenDetail, onEdit }: ListViewCardProps) {
+  const { photos } = usePropertyPhotos(property.id, property.slug);
+  const photoSrc = photos[0] ?? property.hero_image_url ?? null;
+  const suites = property.suites ?? [];
+
+  return (
+    <div
+      className="rounded-2xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200"
+      style={{
+        backgroundColor: 'white',
+        border: selected ? '2px solid #d41f27' : '1px solid #dedad3',
+        boxShadow: selected ? '0 8px 24px rgba(212,31,39,0.15)' : '0 2px 8px rgba(0,0,0,0.04)',
+      }}
+      onClick={onSelect}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'; }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)'; }}
+    >
+      <div className="relative h-44 shrink-0" style={{ backgroundColor: '#e5e1d8' }}>
+        {photoSrc && <img src={photoSrc} alt={property.name} className="w-full h-full object-cover" />}
+        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+          {propertyTypesOf(property).map(t => (
+            <span key={t} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: 'rgba(42,51,48,0.8)', color: 'white' }}>{t}</span>
+          ))}
+          {listingStatusOf(property).map(s => (
+            <span key={s} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col flex-1 p-4">
+        <p className="text-xs font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#d41f27' }}>{property.market}</p>
+        <h3 className="text-base font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
+        <p className="flex items-center gap-1 text-xs mt-1" style={{ color: '#7a8a87' }}>
+          <MapPin className="w-3 h-3 shrink-0" />
+          {formatAddress(property.address)}
+        </p>
+
+        <div className="flex items-center gap-3 text-xs mt-3 pt-3 tabular-nums" style={{ borderTop: '1px solid #f0ede8', color: '#3a4a47' }}>
+          {property.total_sf != null && <span className="font-semibold">{property.total_sf.toLocaleString()} SF</span>}
+          {suites.length > 0 && <span>{suites.length} suite{suites.length !== 1 ? 's' : ''}</span>}
+          {property.year_built != null && <span>Built {property.year_built}</span>}
+        </div>
+
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={e => { e.stopPropagation(); onOpenDetail(); }}
+            className="flex-1 py-2 rounded-lg text-xs font-bold text-white transition-colors"
+            style={{ backgroundColor: '#d41f27' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+          >
+            View Details
+          </button>
+          {onEdit && (
+            <button
+              onClick={e => { e.stopPropagation(); onEdit(); }}
+              className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+              style={{ color: '#3a4a47', border: '1px solid #dedad3' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
