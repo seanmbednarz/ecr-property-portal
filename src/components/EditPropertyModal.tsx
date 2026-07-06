@@ -322,9 +322,18 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
         }
       }
 
+      // propData was fetched by the property UPDATE, before the suite sync
+      // above ran — refetch suites so the dashboard state (and a reopened
+      // edit modal) reflects what was just saved.
+      const { data: freshSuites } = await supabase
+        .from('property_suites')
+        .select('*')
+        .eq('property_id', property.id)
+        .order('display_order');
+
       const mapped: Property = {
         ...propData,
-        suites: (propData.suites ?? []).sort((a: any, b: any) => a.display_order - b.display_order),
+        suites: freshSuites ?? [],
         brokers: (propData.brokers ?? []).map((pb: any) => pb.broker).filter(Boolean),
         client_ids: clientIds,
       };

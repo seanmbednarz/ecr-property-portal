@@ -322,9 +322,17 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
         });
       }
 
+      // propData was fetched by the property INSERT, before the suites were
+      // written — refetch them so the dashboard state includes the new suites.
+      const { data: freshSuites } = await supabase
+        .from('property_suites')
+        .select('*')
+        .eq('property_id', propData.id)
+        .order('display_order');
+
       const mapped: Property = {
         ...propData,
-        suites: (propData.suites ?? []).sort((a: any, b: any) => a.display_order - b.display_order),
+        suites: freshSuites ?? [],
         brokers: (propData.brokers ?? []).map((pb: any) => pb.broker).filter(Boolean),
         client_ids: clientIds,
       };
