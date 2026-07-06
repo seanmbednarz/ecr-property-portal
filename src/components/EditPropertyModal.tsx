@@ -23,6 +23,7 @@ interface SuiteRow {
   op_exp: string;
   available: string;
   tour_url: string;
+  client_ids: string[]; // empty = visible to all assigned clients
 }
 
 async function uploadFile(bucket: string, path: string, file: File): Promise<string> {
@@ -149,12 +150,13 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
       op_exp: s.op_exp != null ? String(s.op_exp) : '',
       available: s.available ?? 'Available Now',
       tour_url: s.tour_url ?? '',
+      client_ids: s.client_ids ?? [],
     }))
   );
   const originalSuiteIds = useRef(new Set((property.suites ?? []).map(s => s.id)));
 
   function addSuite() {
-    setSuites(prev => [...prev, { id: null, suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now', tour_url: '' }]);
+    setSuites(prev => [...prev, { id: null, suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now', tour_url: '', client_ids: [] }]);
   }
   function removeSuite(idx: number) {
     setSuites(prev => prev.filter((_, i) => i !== idx));
@@ -263,6 +265,8 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
           available: s.available || 'Available Now',
           tour_url: s.tour_url.trim() || null,
           display_order: i,
+          // Only keep visibility tags for clients still assigned to the property
+          client_ids: s.client_ids.filter(id => clientIds.includes(id)),
         };
         if (s.id) {
           await supabase.from('property_suites').update(row).eq('id', s.id);
@@ -808,6 +812,31 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
                   <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Virtual Tour Link</p>
                   <input type="url" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.tour_url} onChange={e => updateSuite(idx, { tour_url: e.target.value })} placeholder="https://my.matterport.com/show/?m=…" {...inpFocus} />
                 </div>
+                {clientIds.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>
+                      Show To <span className="normal-case font-normal tracking-normal">(all clients if none selected)</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {clients.filter(c => clientIds.includes(c.id)).map(c => {
+                        const on = suite.client_ids.includes(c.id);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => updateSuite(idx, { client_ids: on ? suite.client_ids.filter(id => id !== c.id) : [...suite.client_ids, c.id] })}
+                            className="px-2 py-0.5 rounded-full text-xs font-semibold transition-colors"
+                            style={on
+                              ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.3)' }
+                              : { color: '#9aaba8', border: '1px solid #dedad3', backgroundColor: 'white' }}
+                          >
+                            {c.company || c.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

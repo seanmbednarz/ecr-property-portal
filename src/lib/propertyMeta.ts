@@ -30,3 +30,14 @@ export function propertyTypesOf(p: { property_types?: string[] | null; property_
 export function listingStatusOf(p: { listing_status?: string[] | null }): string[] {
   return p.listing_status ?? [];
 }
+
+// Suites visible to a given client: suites tagged with client_ids are only
+// shown to those clients; untagged suites show to everyone. clientId null
+// (admin/broker "All Clients" view) sees everything.
+export function suitesForClient<T extends { client_ids?: string[] | null }>(
+  suites: T[],
+  clientId: string | null,
+): T[] {
+  if (!clientId) return suites;
+  return suites.filter(s => !s.client_ids?.length || s.client_ids.includes(clientId));
+}

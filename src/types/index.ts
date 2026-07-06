@@ -46,6 +46,7 @@ export interface Suite {
   tour_url: string | null;
   notes: string | null;
   display_order: number;
+  client_ids?: string[] | null; // empty/null = visible to all assigned clients
 }
 
 export interface Broker {

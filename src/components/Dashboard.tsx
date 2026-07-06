@@ -13,7 +13,7 @@ import ClientsPage from './ClientsPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient } from '../lib/propertyMeta';
 import { formatAddress } from '../lib/geocode';
 import { mapClientBrokers } from '../lib/clientBrokers';
 
@@ -187,6 +187,11 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   // Nothing shows in the All Clients view or for a client with no brokers.
   const activeClientId = effectiveClientId();
   const selectedClient = clients.find(c => c.id === activeClientId) ?? null;
+
+  // Open the edit modal with the RAW property (all suites), never the
+  // client-filtered copy — otherwise saving while "viewing as" a client
+  // would silently delete the suites hidden from that client.
+  const editRawProperty = (p: Property) => setEditProperty(properties.find(x => x.id === p.id) ?? p);
   const footerBrokers = selectedClient?.brokers ?? [];
 
   const propertyTypes = ['All', ...Array.from(new Set(properties.flatMap(p => propertyTypesOf(p))))];
@@ -206,6 +211,10 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
       }
       return true;
     })
+    // Per-client suite visibility: when viewing as a client, hide suites
+    // tagged for other clients. Edit always uses the raw property (see
+    // editRawProperty) so untagged clients' suites aren't lost on save.
+    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
     .sort((a, b) => {
       if (sortKey === 'size_desc') return (b.total_sf ?? 0) - (a.total_sf ?? 0);
       if (sortKey === 'size_asc') return (a.total_sf ?? 0) - (b.total_sf ?? 0);
@@ -242,7 +251,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             setDetailProperty(prev => prev ? { ...prev, brochure_url: url } : prev);
             setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, brochure_url: url } : p));
           }}
-          onEdit={(p) => setEditProperty(p)}
+          onEdit={editRawProperty}
         />
         {notesProperty && (
           <NotesDrawer
@@ -418,7 +427,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
                 onFavoriteToggle={handleFavoriteToggle}
-                onEdit={setEditProperty}
+                onEdit={editRawProperty}
               />
             )}
           </div>
@@ -438,7 +447,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
                 onFavoriteToggle={handleFavoriteToggle}
-                onEdit={setEditProperty}
+                onEdit={editRawProperty}
               />
             )}
           </div>
@@ -472,7 +481,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                       selected={selectedProperty?.id === p.id}
                       onSelect={() => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
                       onOpenDetail={() => setDetailProperty(p)}
-                      onEdit={(isAdmin || isBroker) ? () => setEditProperty(p) : undefined}
+                      onEdit={(isAdmin || isBroker) ? () => editRawProperty(p) : undefined}
                     />
                   ))}
                   {filtered.length === 0 && (
