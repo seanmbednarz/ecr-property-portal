@@ -10,7 +10,7 @@ import AddPropertyModal from './AddPropertyModal';
 import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
-import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, MapPin, Pencil, X, Download, Plus } from 'lucide-react';
+import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
@@ -356,8 +356,9 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             ))}
           </div>
 
-          {/* Sort */}
-          <div className="relative ml-auto md:ml-0" style={{ zIndex: 1500 }} onClick={e => e.stopPropagation()}>
+          {/* Sort — z 35: above the map and list overlay (30), below the
+              sticky header (40) so the Viewing-as dropdown covers it */}
+          <div className="relative ml-auto md:ml-0" style={{ zIndex: 35 }} onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setShowSortMenu(v => !v)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
@@ -402,6 +403,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
 
         {/* Body */}
         <div className="flex flex-1 min-h-0 relative">
+          {desktopView === 'map' && (
           <div className="w-72 shrink-0 hidden md:flex flex-col h-full">
             {loading ? loadingSpinner : (
               <PropertyListSidebar
@@ -420,6 +422,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
               />
             )}
           </div>
+          )}
 
           <div className={`md:hidden flex-col h-full overflow-hidden ${mobileTab === 'list' ? 'flex flex-1' : 'hidden'}`}>
             {loading ? loadingSpinner : (
@@ -441,22 +444,29 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           </div>
 
           <div className={`flex-1 relative min-w-0 ${mobileTab === 'list' ? 'hidden md:block' : 'block'}`}>
-            <MapView
-              properties={filtered}
-              selectedId={selectedProperty?.id ?? null}
-              onSelect={p => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
-              officeLocation={
-                selectedClient?.office_lat != null && selectedClient?.office_lng != null
-                  ? { lat: selectedClient.office_lat, lng: selectedClient.office_lng, address: selectedClient.office_address ?? '' }
-                  : null
-              }
-            />
-            {/* List view — overlays the map (desktop only) so toggling back is instant */}
+            {/* Map stays mounted (just invisible) under the list overlay so
+                toggling back is instant; invisibility also keeps its z-[500]
+                badges from bleeding through the list. Mobile is unaffected. */}
+            <div className={`h-full ${desktopView === 'list' ? 'md:invisible' : ''}`}>
+              <MapView
+                properties={filtered}
+                selectedId={selectedProperty?.id ?? null}
+                onSelect={p => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
+                officeLocation={
+                  selectedClient?.office_lat != null && selectedClient?.office_lng != null
+                    ? { lat: selectedClient.office_lat, lng: selectedClient.office_lng, address: selectedClient.office_address ?? '' }
+                    : null
+                }
+              />
+            </div>
+            {/* List view — overlays the map (desktop only) so toggling back is
+                instant. z-30 keeps it under the sticky header (z-40) so the
+                "Viewing as" dropdown isn't hidden behind it. */}
             {desktopView === 'list' && (
-              <div className="absolute inset-0 z-[500] hidden md:block overflow-y-auto" style={{ backgroundColor: '#f0ede8' }}>
-                <div className="p-4 grid gap-4 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3">
+              <div className="absolute inset-0 z-30 hidden md:block overflow-y-auto" style={{ backgroundColor: '#f0ede8' }}>
+                <div className="p-4 flex flex-col gap-4 max-w-6xl mx-auto">
                   {filtered.map(p => (
-                    <ListViewCard
+                    <ListViewRow
                       key={p.id}
                       property={p}
                       selected={selectedProperty?.id === p.id}
@@ -466,7 +476,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                     />
                   ))}
                   {filtered.length === 0 && (
-                    <p className="col-span-full text-sm text-center py-16" style={{ color: '#9aaba8' }}>No properties match the current filters.</p>
+                    <p className="text-sm text-center py-16" style={{ color: '#9aaba8' }}>No properties match the current filters.</p>
                   )}
                 </div>
               </div>
@@ -653,9 +663,10 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
 }
 
 // ---------------------------------------------------------------------------
-// ListViewCard — photo card for the desktop List view
+// ListViewRow — availability-report style row for the desktop List view:
+// full-height photo on the left, property header + suites table on the right
 // ---------------------------------------------------------------------------
-interface ListViewCardProps {
+interface ListViewRowProps {
   property: Property;
   selected: boolean;
   onSelect: () => void;
@@ -663,14 +674,19 @@ interface ListViewCardProps {
   onEdit?: () => void;
 }
 
-function ListViewCard({ property, selected, onSelect, onOpenDetail, onEdit }: ListViewCardProps) {
+function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: ListViewRowProps) {
   const { photos } = usePropertyPhotos(property.id, property.slug);
   const photoSrc = photos[0] ?? property.hero_image_url ?? null;
   const suites = property.suites ?? [];
+  const rate = (r: number | null) => (r != null ? `$${Number(r).toFixed(2)}/SF` : 'Contact Broker');
+
+  const colHeader = "text-xs pb-1 pr-6" ;
+  const colHeaderStyle = { color: '#7a8a87', borderBottom: '1px solid #dedad3' };
+  const cell = "text-sm font-semibold py-1.5 pr-6";
 
   return (
     <div
-      className="rounded-2xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200"
+      className="flex rounded-xl overflow-hidden cursor-pointer transition-all duration-200"
       style={{
         backgroundColor: 'white',
         border: selected ? '2px solid #d41f27' : '1px solid #dedad3',
@@ -680,53 +696,79 @@ function ListViewCard({ property, selected, onSelect, onOpenDetail, onEdit }: Li
       onMouseEnter={e => { if (!selected) e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.1)'; }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)'; }}
     >
-      <div className="relative h-44 shrink-0" style={{ backgroundColor: '#e5e1d8' }}>
-        {photoSrc && <img src={photoSrc} alt={property.name} className="w-full h-full object-cover" />}
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
-          {propertyTypesOf(property).map(t => (
-            <span key={t} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: 'rgba(42,51,48,0.8)', color: 'white' }}>{t}</span>
-          ))}
-          {listingStatusOf(property).map(s => (
-            <span key={s} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
-          ))}
-        </div>
+      {/* Photo — fills the full height of the row */}
+      <div className="w-52 lg:w-64 shrink-0 relative" style={{ backgroundColor: '#e5e1d8' }}>
+        {photoSrc && <img src={photoSrc} alt={property.name} className="absolute inset-0 w-full h-full object-cover" />}
       </div>
 
-      <div className="flex flex-col flex-1 p-4">
-        <p className="text-xs font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#d41f27' }}>{property.market}</p>
-        <h3 className="text-base font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
-        <p className="flex items-center gap-1 text-xs mt-1" style={{ color: '#7a8a87' }}>
-          <MapPin className="w-3 h-3 shrink-0" />
-          {formatAddress(property.address)}
-        </p>
-
-        <div className="flex items-center gap-3 text-xs mt-3 pt-3 tabular-nums" style={{ borderTop: '1px solid #f0ede8', color: '#3a4a47' }}>
-          {property.total_sf != null && <span className="font-semibold">{property.total_sf.toLocaleString()} SF</span>}
-          {suites.length > 0 && <span>{suites.length} suite{suites.length !== 1 ? 's' : ''}</span>}
-          {property.year_built != null && <span>Built {property.year_built}</span>}
+      {/* Details */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Header band */}
+        <div className="flex items-start justify-between gap-3 px-5 py-3.5" style={{ backgroundColor: '#f5f2ec', borderBottom: '1px solid #e5e1d8' }}>
+          <div className="min-w-0">
+            <h3 className="text-xl font-extrabold leading-tight truncate" style={{ color: '#1e2624' }}>{property.name}</h3>
+            <p className="text-xs font-bold uppercase tracking-wider mt-0.5" style={{ color: '#3a4a47' }}>{formatAddress(property.address)}</p>
+            <p className="text-xs mt-1.5 flex flex-wrap gap-x-4" style={{ color: '#7a8a87' }}>
+              {property.market && <span>Submarket: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>Austin – {property.market}</span></span>}
+              <span>Type: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{propertyTypesOf(property).join('/')}</span></span>
+              {listingStatusOf(property).length > 0 && (
+                <span>Status: <span className="font-bold uppercase" style={{ color: '#d41f27' }}>{listingStatusOf(property).join(' / ')}</span></span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={e => { e.stopPropagation(); onOpenDetail(); }}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-white transition-colors whitespace-nowrap"
+              style={{ backgroundColor: '#d41f27' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+            >
+              View Details
+            </button>
+            {onEdit && (
+              <button
+                onClick={e => { e.stopPropagation(); onEdit(); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex gap-2 mt-3">
-          <button
-            onClick={e => { e.stopPropagation(); onOpenDetail(); }}
-            className="flex-1 py-2 rounded-lg text-xs font-bold text-white transition-colors"
-            style={{ backgroundColor: '#d41f27' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
-          >
-            View Details
-          </button>
-          {onEdit && (
-            <button
-              onClick={e => { e.stopPropagation(); onEdit(); }}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
-              style={{ color: '#3a4a47', border: '1px solid #dedad3' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </button>
-          )}
+        {/* Availability table */}
+        <div className="px-5 py-3 flex-1">
+          <table className="w-full">
+            <thead>
+              <tr className="text-left">
+                <th className={`${colHeader} font-normal w-[40%]`} style={colHeaderStyle}>Availability</th>
+                <th className={`${colHeader} font-normal w-[18%]`} style={colHeaderStyle}>Size</th>
+                <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>Rental Rate</th>
+                <th className={`${colHeader} font-normal w-[20%]`} style={colHeaderStyle}>Date Available</th>
+              </tr>
+            </thead>
+            <tbody style={{ color: '#1e2624' }}>
+              {suites.length > 0 ? suites.map(s => (
+                <tr key={s.id}>
+                  <td className={cell}>{s.suite_name}</td>
+                  <td className={`${cell} tabular-nums`}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
+                  <td className={cell}>{rate(s.base_rent)}</td>
+                  <td className={cell} style={{ color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td className={cell}>—</td>
+                  <td className={`${cell} tabular-nums`}>{property.total_sf != null ? `${property.total_sf.toLocaleString()} SF` : '—'}</td>
+                  <td className={cell}>Contact Broker</td>
+                  <td className={cell}>—</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
