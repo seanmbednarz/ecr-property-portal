@@ -56,7 +56,6 @@ export interface Broker {
   phone: string | null;
   email: string | null;
   photo_url: string | null;
-  login_password: string | null;
   display_order: number;
 }
 
@@ -65,7 +64,6 @@ export interface Client {
   name: string;
   company: string;
   email: string | null;
-  login_password: string | null;
   website: string | null;
   logo_url: string | null;
   office_address: string | null;

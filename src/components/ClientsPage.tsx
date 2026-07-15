@@ -9,6 +9,7 @@ interface ClientsPageProps {
   brokers: Broker[];
   properties: { id: string; client_id: string | null; client_ids?: string[] }[];
   onClientsChange: (clients: Client[]) => void;
+  canManage: boolean; // admins manage clients; brokers get a read-only view of their own
 }
 
 interface ClientModalProps {
@@ -24,7 +25,9 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [name, setName] = useState(client?.name ?? '');
   const [company, setCompany] = useState(client?.company ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
-  const [password, setPassword] = useState(client?.login_password ?? 'client2026');
+  // Write-only: used to set/reset the login via provision-login, never
+  // stored or displayed. Blank on edit = leave the existing login unchanged.
+  const [password, setPassword] = useState('');
   const [website, setWebsite] = useState(client?.website ?? '');
   const [logoUrl, setLogoUrl] = useState(client?.logo_url ?? '');
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -137,7 +140,6 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         name: name.trim(),
         company: company.trim(),
         email: email.trim() || null,
-        login_password: password.trim() || 'client2026',
         website: website.trim() || null,
         logo_url: finalLogoUrl,
         office_address: officeAddress.trim() || null,
@@ -167,9 +169,10 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         await supabase.from('client_brokers').insert(rows);
       }
 
-      // Provision (or update) the client's actual login account so they can sign in
-      // with their email + password and see only their property summary.
-      if (payload.email && payload.login_password) {
+      // Provision (or reset) the client's login only when a password was
+      // entered; blank leaves any existing login untouched.
+      const newPassword = password.trim();
+      if (payload.email && newPassword) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
@@ -177,7 +180,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ email: payload.email, password: payload.login_password, role: 'client', client_id: savedClient.id }),
+              body: JSON.stringify({ email: payload.email, password: newPassword, role: 'client', client_id: savedClient.id }),
             }
           );
           if (!res.ok) {
@@ -235,8 +238,8 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
               <input type="email" className={inp} style={inpStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="jordan@example.com" {...focus} />
             </div>
             <div>
-              <label className={lbl} style={lblStyle}>Password</label>
-              <input className={inp} style={inpStyle} value={password} onChange={e => setPassword(e.target.value)} {...focus} />
+              <label className={lbl} style={lblStyle}>Set Login Password</label>
+              <input className={inp} style={inpStyle} value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit ? 'Leave blank to keep current' : 'Min 6 characters'} autoComplete="new-password" {...focus} />
             </div>
           </div>
 
@@ -411,7 +414,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   );
 }
 
-export default function ClientsPage({ brokers, properties, onClientsChange }: ClientsPageProps) {
+export default function ClientsPage({ brokers, properties, onClientsChange, canManage }: ClientsPageProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalClient, setModalClient] = useState<Partial<Client> | null | false>(false);
@@ -464,8 +467,11 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-xl font-extrabold uppercase tracking-wide" style={{ color: '#1e2624' }}>Clients</h1>
-            <p className="text-sm mt-0.5" style={{ color: '#7a8a87' }}>Create logins, set company branding, and assign brokers</p>
+            <p className="text-sm mt-0.5" style={{ color: '#7a8a87' }}>
+              {canManage ? 'Create logins, set company branding, and assign brokers' : 'Your assigned clients'}
+            </p>
           </div>
+          {canManage && (
           <button
             onClick={() => setModalClient({})}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide text-white"
@@ -475,6 +481,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
           >
             <Plus className="w-3.5 h-3.5" /> Add Client
           </button>
+          )}
         </div>
 
         {loading ? (
@@ -507,14 +514,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs" style={{ color: '#3a4a47' }}>{c.email ?? '—'}</span>
-                        {c.login_password && (
-                          <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ backgroundColor: 'rgba(136,152,147,0.15)', color: '#889893' }}>
-                            {c.login_password}
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-xs" style={{ color: '#3a4a47' }}>{c.email ?? '—'}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 flex-wrap">
@@ -528,6 +528,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
                     </td>
                     <td className="px-4 py-3 text-xs font-medium" style={{ color: '#3a4a47' }}>{propCountFor(c.id)}</td>
                     <td className="px-4 py-3">
+                      {canManage && (
                       <div className="flex items-center gap-2">
                         <button onClick={() => setModalClient(c)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3' }}
                           onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
@@ -536,6 +537,7 @@ export default function ClientsPage({ brokers, properties, onClientsChange }: Cl
                           onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.06)')}
                           onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}>Delete</button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))}

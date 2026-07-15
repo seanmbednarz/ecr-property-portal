@@ -242,7 +242,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           property={detailProperty}
           isFavorited={favorites.has(detailProperty.id)}
           notesCount={notesCounts[detailProperty.id] ?? 0}
-          isAdmin={isAdmin || isBroker}
+          isAdmin={isAdmin}
           client={selectedClient}
           onBack={() => setDetailProperty(null)}
           onFavoriteToggle={handleFavoriteToggle}
@@ -312,6 +312,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           brokers={brokers}
           properties={properties.map(p => ({ id: p.id, client_id: p.client_id, client_ids: p.client_ids }))}
           onClientsChange={setClients}
+          canManage={isAdmin}
         />
       )}
 
@@ -396,8 +397,8 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             )}
           </div>
 
-          {/* + New Property — admin/broker only */}
-          {!isClient && (
+          {/* + New Property — admin only */}
+          {isAdmin && (
           <button
             onClick={() => setShowAddProperty(true)}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors whitespace-nowrap shrink-0"
@@ -422,7 +423,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 notesCounts={notesCounts}
                 typeFilter={typeFilter}
                 propertyTypes={propertyTypes}
-                isAdmin={isAdmin || isBroker}
+                isAdmin={isAdmin}
                 onSelect={p => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
@@ -442,7 +443,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 notesCounts={notesCounts}
                 typeFilter={typeFilter}
                 propertyTypes={propertyTypes}
-                isAdmin={isAdmin || isBroker}
+                isAdmin={isAdmin}
                 onSelect={setDetailProperty}
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
@@ -481,7 +482,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                       selected={selectedProperty?.id === p.id}
                       onSelect={() => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
                       onOpenDetail={() => setDetailProperty(p)}
-                      onEdit={(isAdmin || isBroker) ? () => editRawProperty(p) : undefined}
+                      onEdit={isAdmin ? () => editRawProperty(p) : undefined}
                     />
                   ))}
                   {filtered.length === 0 && (

@@ -35,7 +35,9 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
   const [title, setTitle] = useState(broker?.title ?? '');
   const [phone, setPhone] = useState(broker?.phone ?? '');
   const [email, setEmail] = useState(broker?.email ?? '');
-  const [loginPassword, setLoginPassword] = useState(broker?.login_password ?? 'broker');
+  // Write-only: sets/resets the login via provision-login, never stored or
+  // displayed. Blank on edit = leave the existing login unchanged.
+  const [loginPassword, setLoginPassword] = useState('');
   const [photoUrl, setPhotoUrl] = useState(broker?.photo_url ?? '');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState(broker?.photo_url ?? '');
@@ -79,7 +81,6 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         title: title.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
-        login_password: loginPassword.trim() || 'broker',
         photo_url: finalPhotoUrl,
       };
 
@@ -94,10 +95,10 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         saved = data as Broker;
       }
 
-      // Provision (or update) the broker's actual login account so they can sign in
-      // with their email + password. The Supabase login uses Auth, not this table,
-      // so without this step the saved password would never let them in.
-      if (payload.email && payload.login_password) {
+      // Provision (or reset) the broker's login only when a password was
+      // entered; blank leaves any existing login untouched.
+      const newPassword = loginPassword.trim();
+      if (payload.email && newPassword) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
@@ -105,7 +106,7 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ email: payload.email, password: payload.login_password, role: 'broker', broker_id: saved.id }),
+              body: JSON.stringify({ email: payload.email, password: newPassword, role: 'broker', broker_id: saved.id }),
             }
           );
           if (!res.ok) {
@@ -183,8 +184,8 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
 
           {/* Password */}
           <div>
-            <label className={lbl} style={lblStyle}>Password (broker login)</label>
-            <input className={inp} style={inpStyle} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} {...focus} />
+            <label className={lbl} style={lblStyle}>Set Login Password</label>
+            <input className={inp} style={inpStyle} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder={isEdit ? 'Leave blank to keep current' : 'Min 6 characters'} autoComplete="new-password" {...focus} />
             <p className="text-xs mt-1" style={{ color: '#9aaba8' }}>Brokers sign in with their email + this password to view their clients' feedback.</p>
           </div>
 
