@@ -718,6 +718,7 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
             <h3 className="text-xl font-extrabold leading-tight truncate" style={{ color: '#1e2624' }}>{property.name}</h3>
             <p className="text-xs font-bold uppercase tracking-wider mt-0.5" style={{ color: '#3a4a47' }}>{formatAddress(property.address)}</p>
             <p className="text-xs mt-1.5 flex flex-wrap gap-x-4" style={{ color: '#7a8a87' }}>
+              {property.total_sf != null && <span>Size: <span className="font-bold tabular-nums" style={{ color: '#3a4a47' }}>{property.total_sf.toLocaleString()} SF</span></span>}
               {property.market && <span>Submarket: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>Austin – {property.market}</span></span>}
               <span>Type: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{propertyTypesOf(property).join('/')}</span></span>
               {listingStatusOf(property).length > 0 && (
@@ -749,35 +750,34 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
           </div>
         </div>
 
-        {/* Availability table */}
+        {/* Availability table — only real suite availability; a property with
+            no suites gets no phantom "full building" row (size lives in the
+            header band summary line) */}
         <div className="px-5 py-3 flex-1">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left">
-                <th className={`${colHeader} font-normal w-[40%]`} style={colHeaderStyle}>Availability</th>
-                <th className={`${colHeader} font-normal w-[18%]`} style={colHeaderStyle}>Size</th>
-                <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>Rental Rate</th>
-                <th className={`${colHeader} font-normal w-[20%]`} style={colHeaderStyle}>Date Available</th>
-              </tr>
-            </thead>
-            <tbody style={{ color: '#1e2624' }}>
-              {suites.length > 0 ? suites.map(s => (
-                <tr key={s.id}>
-                  <td className={cell}>{s.suite_name}</td>
-                  <td className={`${cell} tabular-nums`}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
-                  <td className={cell}>{rate(s.base_rent)}</td>
-                  <td className={cell} style={{ color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>
+          {suites.length > 0 ? (
+            <table className="w-full">
+              <thead>
+                <tr className="text-left">
+                  <th className={`${colHeader} font-normal w-[40%]`} style={colHeaderStyle}>Availability</th>
+                  <th className={`${colHeader} font-normal w-[18%]`} style={colHeaderStyle}>Size</th>
+                  <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>Rental Rate</th>
+                  <th className={`${colHeader} font-normal w-[20%]`} style={colHeaderStyle}>Date Available</th>
                 </tr>
-              )) : (
-                <tr>
-                  <td className={cell}>—</td>
-                  <td className={`${cell} tabular-nums`}>{property.total_sf != null ? `${property.total_sf.toLocaleString()} SF` : '—'}</td>
-                  <td className={cell}>Contact Broker</td>
-                  <td className={cell}>—</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody style={{ color: '#1e2624' }}>
+                {suites.map(s => (
+                  <tr key={s.id}>
+                    <td className={cell}>{s.suite_name}</td>
+                    <td className={`${cell} tabular-nums`}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
+                    <td className={cell}>{rate(s.base_rent)}</td>
+                    <td className={cell} style={{ color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-xs" style={{ color: '#9aaba8' }}>Contact broker for availability.</p>
+          )}
         </div>
       </div>
     </div>
