@@ -52,7 +52,14 @@ export default function Header({
   }, [showClientMenu]);
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    try {
+      // Local scope avoids hanging/throwing on the global token-revoke request
+      // (which can fail for recovery-created sessions).
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Ignore — we clear the session and reload regardless.
+    }
+    window.location.reload();
   }
 
   const now = new Date();
