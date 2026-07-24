@@ -720,7 +720,7 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
             <p className="text-xs font-bold uppercase tracking-wider mt-0.5" style={{ color: '#3a4a47' }}>{formatAddress(property.address)}</p>
             <p className="text-xs mt-1.5 flex flex-wrap gap-x-4" style={{ color: '#7a8a87' }}>
               {property.total_sf != null && <span>Size: <span className="font-bold tabular-nums" style={{ color: '#3a4a47' }}>{property.total_sf.toLocaleString()} SF</span></span>}
-              {property.market && <span>Submarket: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>Austin – {property.market}</span></span>}
+              {property.market && <span>Submarket: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{property.market}</span></span>}
               <span>Type: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{propertyTypesOf(property).join('/')}</span></span>
               {listingStatusOf(property).length > 0 && (
                 <span>Status: <span className="font-bold uppercase" style={{ color: '#d41f27' }}>{listingStatusOf(property).join(' / ')}</span></span>
