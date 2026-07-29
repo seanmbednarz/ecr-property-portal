@@ -10,7 +10,7 @@ import AddPropertyModal from './AddPropertyModal';
 import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
-import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus } from 'lucide-react';
+import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient, isSaleSuite } from '../lib/propertyMeta';
@@ -48,6 +48,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const [brokers, setBrokers] = useState<Broker[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [notesCounts, setNotesCounts] = useState<Record<string, number>>({});
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -111,7 +112,20 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     const { data, error } = await supabase
       .from('properties')
       .select(`*, suites:property_suites(*), brokers:property_brokers(broker:brokers(*)), property_clients(client_id)`);
-    if (!error && data) {
+    if (error) {
+      // Never swallow this: a failed load used to render as an empty portal,
+      // which reads like "you have no properties" rather than "we couldn't
+      // reach the database". A dropped request carries no PostgREST code;
+      // a genuine database error always does.
+      setLoadError(
+        error.code
+          ? `Couldn't load properties (${error.message}).`
+          : "Couldn't reach the property database. Check your internet connection and try again."
+      );
+      return;
+    }
+    setLoadError(null);
+    if (data) {
       const mapped = (data as any[]).map(p => ({
         ...p,
         suites: (p.suites ?? []).sort((a: any, b: any) => a.display_order - b.display_order),
@@ -410,6 +424,24 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           </button>
           )}
         </div>
+
+        {/* Load failure — shown in place of a silently empty portal */}
+        {loadError && !loading && (
+          <div className="flex items-center gap-3 px-5 py-3 mx-4 mt-3 rounded-xl shrink-0"
+            style={{ backgroundColor: 'rgba(212,31,39,0.06)', border: '1px solid rgba(212,31,39,0.25)' }}>
+            <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#d41f27' }} />
+            <p className="text-sm flex-1" style={{ color: '#3a4a47' }}>{loadError}</p>
+            <button
+              onClick={() => loadAll()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors"
+              style={{ backgroundColor: '#d41f27', color: 'white' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+            >
+              <RefreshCw className="w-3 h-3" /> Retry
+            </button>
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex flex-1 min-h-0 relative">

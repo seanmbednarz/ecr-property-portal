@@ -22,7 +22,19 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
 
     if (authError) {
-      setError('Invalid email or password. Please try again.');
+      // A request that never reached Supabase — blocked office network,
+      // captive portal, service down — carries no HTTP status. Saying
+      // "invalid password" there sends people hunting for an account problem
+      // that doesn't exist, so name the real failure.
+      const status = authError.status ?? 0;
+      const unreachable = authError.name === 'AuthRetryableFetchError' || status === 0;
+      setError(
+        unreachable
+          ? "Can't reach the sign-in service. Check your internet connection and try again."
+          : status >= 500
+            ? 'The sign-in service is temporarily unavailable. Please try again in a moment.'
+            : 'Invalid email or password. Please try again.'
+      );
       setLoading(false);
       return;
     }
