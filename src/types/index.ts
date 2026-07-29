@@ -33,10 +33,16 @@ export interface Property {
   brokers?: Broker[];
 }
 
+export type SuiteListingType = 'lease' | 'sale';
+
 export interface Suite {
   id: string;
   property_id: string;
   suite_name: string;
+  // 'lease' (default) quotes rent; 'sale' quotes price/SF + sale price and
+  // hides op. exp. Missing/null is treated as 'lease'.
+  listing_type?: SuiteListingType | null;
+  sale_price?: number | null; // optional override for base_rent × sf
   sf: number | null;
   base_rent: number | null;
   op_exp: number | null;

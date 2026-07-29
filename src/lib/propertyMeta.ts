@@ -31,6 +31,23 @@ export function listingStatusOf(p: { listing_status?: string[] | null }): string
   return p.listing_status ?? [];
 }
 
+// ─── Suite lease vs. sale ───────────────────────────────────────────────────
+// Each suite is quoted either for lease (default) or for sale. Sale suites
+// read base_rent as price per SF, ignore op. exp., and headline sale_price
+// (falling back to price/SF × SF) instead of monthly/annual rent.
+
+export function isSaleSuite(s: { listing_type?: string | null }): boolean {
+  return s.listing_type === 'sale';
+}
+
+export function salePriceOf(
+  s: { sale_price?: number | null; base_rent?: number | null; sf?: number | null },
+): number | null {
+  if (s.sale_price != null) return s.sale_price;
+  if (s.base_rent != null && s.sf != null) return s.base_rent * s.sf;
+  return null;
+}
+
 // Suites visible to a given client: suites tagged with client_ids are only
 // shown to those clients; untagged suites show to everyone. clientId null
 // (admin/broker "All Clients" view) sees everything.

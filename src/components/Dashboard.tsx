@@ -13,7 +13,7 @@ import ClientsPage from './ClientsPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient, isSaleSuite } from '../lib/propertyMeta';
 import { formatAddress } from '../lib/geocode';
 import { mapClientBrokers } from '../lib/clientBrokers';
 
@@ -689,6 +689,9 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
   const photoSrc = photos[0] ?? property.hero_image_url ?? null;
   const suites = property.suites ?? [];
   const rate = (r: number | null) => (r != null ? `$${Number(r).toFixed(2)}/SF` : 'Contact Broker');
+  // Sale suites quote price per SF, so the shared column drops the "Rental"
+  // qualifier as soon as one is present.
+  const anySale = suites.some(isSaleSuite);
 
   const colHeader = "text-xs pb-1 pr-6" ;
   const colHeaderStyle = { color: '#7a8a87', borderBottom: '1px solid #dedad3' };
@@ -761,14 +764,20 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
                 <tr className="text-left">
                   <th className={`${colHeader} font-normal w-[40%]`} style={colHeaderStyle}>Availability</th>
                   <th className={`${colHeader} font-normal w-[18%]`} style={colHeaderStyle}>Size</th>
-                  <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>Rental Rate</th>
+                  <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>{anySale ? 'Rate' : 'Rental Rate'}</th>
                   <th className={`${colHeader} font-normal w-[20%]`} style={colHeaderStyle}>Date Available</th>
                 </tr>
               </thead>
               <tbody style={{ color: '#1e2624' }}>
                 {suites.map(s => (
                   <tr key={s.id}>
-                    <td className={cell}>{s.suite_name}</td>
+                    <td className={cell}>
+                      {s.suite_name}
+                      {isSaleSuite(s) && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold align-middle"
+                          style={{ backgroundColor: 'rgba(46,125,79,0.1)', color: '#2e7d4f' }}>For Sale</span>
+                      )}
+                    </td>
                     <td className={`${cell} tabular-nums`}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
                     <td className={cell}>{rate(s.base_rent)}</td>
                     <td className={cell} style={{ color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>

@@ -3,9 +3,10 @@ import { X, Upload, MapPin, Plus, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
-import { Property, Client } from '../types';
+import { Property, Client, SuiteListingType } from '../types';
 import { PROPERTY_TYPES, LISTING_STATUSES, statusColor } from '../lib/propertyMeta';
 import { AddressSuggestion, searchAddresses as geocodeSearch, geocodeAddress } from '../lib/geocode';
+import SuiteTypeToggle, { salePricePlaceholder } from './SuiteTypeToggle';
 
 interface AddPropertyModalProps {
   onClose: () => void;
@@ -16,9 +17,11 @@ interface AddPropertyModalProps {
 
 interface Suite {
   suite_name: string;
+  listing_type: SuiteListingType; // 'lease' quotes rent, 'sale' quotes price
   sf: string;
-  base_rent: string;
-  op_exp: string;
+  base_rent: string; // $/SF — rent for lease, price per SF for sale
+  op_exp: string; // lease only
+  sale_price: string; // sale only; blank = base_rent × sf
   available: string;
   tour_url: string;
   client_ids: string[]; // empty = visible to all assigned clients
@@ -148,7 +151,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   }
 
   function addSuite() {
-    setSuites(prev => [...prev, { suite_name: '', sf: '', base_rent: '', op_exp: '', available: 'Available Now', tour_url: '', client_ids: [] }]);
+    setSuites(prev => [...prev, { suite_name: '', listing_type: 'lease', sf: '', base_rent: '', op_exp: '', sale_price: '', available: 'Available Now', tour_url: '', client_ids: [] }]);
   }
 
   function removeSuite(idx: number) {
@@ -299,9 +302,12 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
         const suiteRows = suites.map((s, i) => ({
           property_id: propData.id,
           suite_name: s.suite_name || `Suite ${i + 1}`,
+          listing_type: s.listing_type,
           sf: s.sf ? parseInt(s.sf) : null,
           base_rent: s.base_rent ? parseFloat(s.base_rent) : null,
-          op_exp: s.op_exp ? parseFloat(s.op_exp) : null,
+          // Sale suites carry no op. exp.; lease suites carry no sale price.
+          op_exp: s.listing_type !== 'sale' && s.op_exp ? parseFloat(s.op_exp) : null,
+          sale_price: s.listing_type === 'sale' && s.sale_price ? parseFloat(s.sale_price) : null,
           available: s.available || 'Available Now',
           tour_url: s.tour_url.trim() || null,
           display_order: i,
@@ -795,7 +801,8 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
                 className="p-3 rounded-xl mb-2"
                 style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8' }}
               >
-                <div className="grid gap-2" style={{ gridTemplateColumns: '1fr 80px 90px 90px 1fr auto' }}>
+                <SuiteTypeToggle value={suite.listing_type} onChange={t => updateSuite(idx, { listing_type: t })} />
+                <div className="grid gap-2" style={{ gridTemplateColumns: suite.listing_type === 'sale' ? '1fr 80px 90px 120px 1fr auto' : '1fr 80px 90px 90px 1fr auto' }}>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Suite</p>
                     <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.suite_name} onChange={e => updateSuite(idx, { suite_name: e.target.value })} placeholder="Suite 100" {...inpFocus} />
@@ -805,13 +812,20 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
                     <input type="number" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sf} onChange={e => updateSuite(idx, { sf: e.target.value })} placeholder="2,000" {...inpFocus} />
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Base$/SF</p>
-                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder="38.50" {...inpFocus} />
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>{suite.listing_type === 'sale' ? 'Price$/SF' : 'Base$/SF'}</p>
+                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.base_rent} onChange={e => updateSuite(idx, { base_rent: e.target.value })} placeholder={suite.listing_type === 'sale' ? '205.00' : '38.50'} {...inpFocus} />
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
-                    <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
-                  </div>
+                  {suite.listing_type === 'sale' ? (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Sale Price</p>
+                      <input type="number" step="1" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.sale_price} onChange={e => updateSuite(idx, { sale_price: e.target.value })} placeholder={salePricePlaceholder(suite)} {...inpFocus} />
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>OPEX$/SF</p>
+                      <input type="number" step="0.01" className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.op_exp} onChange={e => updateSuite(idx, { op_exp: e.target.value })} placeholder="14.00" {...inpFocus} />
+                    </div>
+                  )}
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#7a8a87' }}>Availability</p>
                     <input className={inp} style={{ ...inpStyle, padding: '6px 10px' }} value={suite.available} onChange={e => updateSuite(idx, { available: e.target.value })} placeholder="Available Now" {...inpFocus} />

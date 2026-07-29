@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Heart, MessageSquare, MapPin, ExternalLink, ChevronLeft, ChevronRight, Download, Upload, X, ZoomIn, Pencil, Trash2 } from 'lucide-react';
-import { Property, Client } from '../types';
+import { Property, Client, Suite } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, isSaleSuite, salePriceOf } from '../lib/propertyMeta';
 import { supabase } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
 
@@ -45,6 +45,82 @@ function fmtSF(v: number | null | undefined) {
 function fmtMo(v: number | null | undefined) {
   if (v == null) return '—';
   return `$${Math.round(v).toLocaleString()}/mo`;
+}
+function fmtWhole(v: number | null | undefined) {
+  return v == null ? '—' : `$${Math.round(v).toLocaleString()}`;
+}
+
+// Suite availability table. Lease suites quote base rent / op. exp. / full
+// service rate / monthly + annual rent; sale suites drop op. exp. entirely and
+// quote price per SF + total sale price instead.
+function SuiteTable({ title, suites, currentYear, sale = false }: {
+  title: string;
+  suites: Suite[];
+  currentYear: number;
+  sale?: boolean;
+}) {
+  const headers = sale
+    ? ['Suite', 'SQ FT', 'Price / SF', 'Sale Price', 'Available', 'Virtual Tour', 'Notes']
+    : ['Suite', 'SQ FT', 'Base Rent', `${currentYear} Op. Exp.`, 'Full Svc. Rate',
+       'Quoted Mo. Rent', 'Quoted Annual Rent', 'Available', 'Virtual Tour', 'Notes'];
+
+  return (
+    <div className="mt-10">
+      <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#7a8a87' }}>{title}</h2>
+      <div className="rounded-xl overflow-hidden shadow-sm" style={{ border: '1px solid #e5e1d8' }}>
+        <div className="overflow-x-auto">
+          <table className={`w-full text-sm ${sale ? 'min-w-[620px]' : 'min-w-[780px]'}`}>
+            <thead>
+              <tr style={{ backgroundColor: '#f5f2ec', borderBottom: '1px solid #e5e1d8' }}>
+                {headers.map(h => (
+                  <th key={h} className="text-left text-xs font-semibold uppercase tracking-wider px-4 py-3" style={{ color: '#7a8a87' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {suites.map((s, i) => {
+                const fullSvc = s.full_svc ?? (s.base_rent != null && s.op_exp != null ? s.base_rent + s.op_exp : null);
+                const annualRent = s.monthly_rent ?? (fullSvc != null && s.sf != null ? fullSvc * s.sf : null);
+                const monthlyRent = annualRent != null ? annualRent / 12 : null;
+                return (
+                  <tr key={s.id} style={{ backgroundColor: i % 2 === 0 ? '#f5f2ec' : 'white', borderBottom: i < suites.length - 1 ? '1px solid #e5e1d8' : 'none' }}>
+                    <td className="px-4 py-3 font-semibold" style={{ color: '#1e2624' }}>{s.suite_name}</td>
+                    <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.sf != null ? s.sf.toLocaleString() : '—'}</td>
+                    <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.base_rent != null ? `${fmt$(s.base_rent)}/SF` : '—'}</td>
+                    {sale ? (
+                      <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fmtWhole(salePriceOf(s))}</td>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.op_exp != null ? `${fmt$(s.op_exp)}/SF` : '—'}</td>
+                        <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fullSvc != null ? `${fmt$(fullSvc)}/SF` : '—'}</td>
+                        <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fmtMo(monthlyRent)}</td>
+                        <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{annualRent != null ? `$${Math.round(annualRent).toLocaleString()}/yr` : '—'}</td>
+                      </>
+                    )}
+                    <td className="px-4 py-3">
+                      <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium"
+                        style={s.available === 'Available Now'
+                          ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.2)' }
+                          : { backgroundColor: 'rgba(122,138,135,0.08)', color: '#7a8a87', border: '1px solid rgba(122,138,135,0.2)' }
+                        }
+                      >{s.available ?? '—'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.tour_url && safeHttpUrl(s.tour_url)
+                        ? <a href={safeHttpUrl(s.tour_url)!} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#d41f27' }}>View Tour <ExternalLink className="w-3 h-3" /></a>
+                        : <span style={{ color: '#c8c3b8' }}>—</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3 text-xs" style={{ color: '#7a8a87' }}>{s.notes ?? '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 
@@ -192,6 +268,8 @@ export default function PropertyDetailPage({
   const [brochureError, setBrochureError] = useState('');
   const brochureInputRef = useRef<HTMLInputElement>(null);
   const suites = property.suites ?? [];
+  const leaseSuites = suites.filter(s => !isSaleSuite(s));
+  const saleSuites = suites.filter(isSaleSuite);
 
   const { photos, floorPlanUrls, loading, storedPhotos, remove } = usePropertyPhotos(property.id, property.slug);
   const heroUrl = safeHttpUrl(property.hero_image_url);
@@ -449,7 +527,11 @@ export default function PropertyDetailPage({
             <div className="grid grid-cols-3 gap-px rounded-xl overflow-hidden mb-5 shadow-sm" style={{ backgroundColor: '#e5e1d8' }}>
               {[
                 { label: 'Size', value: fmtSF(property.total_sf) },
-                { label: 'Rate', value: suites[0]?.base_rent ? `${fmt$(suites[0].base_rent)} / SF NNN` : '—' },
+                // Headline rate follows the first suite: NNN rent for lease,
+                // price per SF for a sale-only listing.
+                leaseSuites.length === 0 && saleSuites.length > 0
+                  ? { label: 'Price', value: saleSuites[0].base_rent ? `${fmt$(saleSuites[0].base_rent)} / SF` : fmtWhole(salePriceOf(saleSuites[0])) }
+                  : { label: 'Rate', value: leaseSuites[0]?.base_rent ? `${fmt$(leaseSuites[0].base_rent)} / SF NNN` : '—' },
                 { label: 'Available', value: suites.some(s => s.available === 'Available Now') ? 'Available Now' : suites.length > 0 ? 'Check Suites' : '—' },
               ].map(({ label, value }) => (
                 <div key={label} className="px-4 py-3" style={{ backgroundColor: '#f5f2ec' }}>
@@ -591,60 +673,22 @@ export default function PropertyDetailPage({
           </div>
         </div>
 
-        {/* Available Suites */}
-        {suites.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#7a8a87' }}>Available Suites</h2>
-            <div className="rounded-xl overflow-hidden shadow-sm" style={{ border: '1px solid #e5e1d8' }}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[780px]">
-                  <thead>
-                    <tr style={{ backgroundColor: '#f5f2ec', borderBottom: '1px solid #e5e1d8' }}>
-                      {[
-                        'Suite', 'SQ FT', 'Base Rent', `${currentYear} Op. Exp.`,
-                        'Full Svc. Rate', 'Quoted Mo. Rent', 'Quoted Annual Rent', 'Available', 'Virtual Tour', 'Notes',
-                      ].map(h => (
-                        <th key={h} className="text-left text-xs font-semibold uppercase tracking-wider px-4 py-3" style={{ color: '#7a8a87' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {suites.map((s, i) => {
-                      const fullSvc = s.full_svc ?? (s.base_rent != null && s.op_exp != null ? s.base_rent + s.op_exp : null);
-                      const annualRent = s.monthly_rent ?? (fullSvc != null && s.sf != null ? fullSvc * s.sf : null);
-                      const monthlyRent = annualRent != null ? annualRent / 12 : null;
-                      return (
-                        <tr key={s.id} style={{ backgroundColor: i % 2 === 0 ? '#f5f2ec' : 'white', borderBottom: i < suites.length - 1 ? '1px solid #e5e1d8' : 'none' }}>
-                          <td className="px-4 py-3 font-semibold" style={{ color: '#1e2624' }}>{s.suite_name}</td>
-                          <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.sf != null ? s.sf.toLocaleString() : '—'}</td>
-                          <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.base_rent != null ? `${fmt$(s.base_rent)}/SF` : '—'}</td>
-                          <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.op_exp != null ? `${fmt$(s.op_exp)}/SF` : '—'}</td>
-                          <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fullSvc != null ? `${fmt$(fullSvc)}/SF` : '—'}</td>
-                          <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{fmtMo(monthlyRent)}</td>
-                          <td className="px-4 py-3 tabular-nums font-medium" style={{ color: '#1e2624' }}>{annualRent != null ? `$${Math.round(annualRent).toLocaleString()}/yr` : '—'}</td>
-                          <td className="px-4 py-3">
-                            <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium"
-                              style={s.available === 'Available Now'
-                                ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.2)' }
-                                : { backgroundColor: 'rgba(122,138,135,0.08)', color: '#7a8a87', border: '1px solid rgba(122,138,135,0.2)' }
-                              }
-                            >{s.available ?? '—'}</span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {s.tour_url && safeHttpUrl(s.tour_url)
-                              ? <a href={safeHttpUrl(s.tour_url)!} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-semibold" style={{ color: '#d41f27' }}>View Tour <ExternalLink className="w-3 h-3" /></a>
-                              : <span style={{ color: '#c8c3b8' }}>—</span>
-                            }
-                          </td>
-                          <td className="px-4 py-3 text-xs" style={{ color: '#7a8a87' }}>{s.notes ?? '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+        {/* Available Suites — lease and sale spaces are quoted with different
+            columns, so each group gets its own table. */}
+        {leaseSuites.length > 0 && (
+          <SuiteTable
+            title={saleSuites.length > 0 ? 'Available Suites — For Lease' : 'Available Suites'}
+            suites={leaseSuites}
+            currentYear={currentYear}
+          />
+        )}
+        {saleSuites.length > 0 && (
+          <SuiteTable
+            title={leaseSuites.length > 0 ? 'Available Suites — For Sale' : 'For Sale'}
+            suites={saleSuites}
+            currentYear={currentYear}
+            sale
+          />
         )}
       </main>
 
