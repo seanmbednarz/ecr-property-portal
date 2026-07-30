@@ -198,9 +198,6 @@ export async function buildSummaryWorkbook(report: SummaryReport): Promise<Array
   if (report.lease.length > 0 || report.sale.length === 0) leaseSheet(wb, report, logoId);
   if (report.sale.length > 0) saleSheet(wb, report, logoId);
 
-  // Blank Map tab, matching the templates — a place to paste the map graphic.
-  wb.addWorksheet('Map', { pageSetup: { orientation: 'landscape' } });
-
   return wb.xlsx.writeBuffer();
 }
 
