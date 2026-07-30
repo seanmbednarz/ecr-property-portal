@@ -7,3 +7,36 @@
 .maplibregl-map {
   font-family: Montserrat, sans-serif;
 }
+
+/* Property Summary Report print view (PrintSummary.tsx). Hidden on screen;
+   on print it replaces the app entirely so the PDF is just the report. */
+#print-summary {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.4in;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  #print-summary {
+    display: block;
+  }
+
+  /* Keep the red header band and alternating row fills in the PDF — browsers
+     drop background colors when printing unless asked not to. */
+  #print-summary * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Repeat the column headings on every page of a long report. */
+  #print-summary thead {
+    display: table-header-group;
+  }
+}

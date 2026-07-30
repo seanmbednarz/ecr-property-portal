@@ -16,6 +16,8 @@ import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient, isSaleSuite } from '../lib/propertyMeta';
 import { formatAddress } from '../lib/geocode';
 import { mapClientBrokers } from '../lib/clientBrokers';
+import { buildSummaryReport, SummaryReport } from '../lib/summaryReport';
+import PrintSummary from './PrintSummary';
 
 interface DashboardProps {
   userEmail: string;
@@ -49,6 +51,8 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
+  const [printReport, setPrintReport] = useState<SummaryReport | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [notesCounts, setNotesCounts] = useState<Record<string, number>>({});
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
@@ -106,6 +110,35 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setLoading(true);
     await Promise.all([fetchProperties(), fetchBrokers(), fetchClients(), fetchFavorites(), fetchNotesCounts()]);
     setLoading(false);
+  }
+
+  function currentReport(): SummaryReport {
+    const name = selectedClient?.company || selectedClient?.name || '';
+    return buildSummaryReport(clientProperties, name);
+  }
+
+  async function handleExportExcel() {
+    setExporting('excel');
+    try {
+      const { downloadSummaryWorkbook } = await import('../lib/exportExcel');
+      await downloadSummaryWorkbook(currentReport());
+    } catch (e: any) {
+      setLoadError(`Couldn't build the Excel report: ${e?.message ?? 'unknown error'}`);
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function handleExportPdf() {
+    setExporting('pdf');
+    setPrintReport(currentReport());
+  }
+
+  // Fired by PrintSummary once its photos have decoded.
+  function handlePrintReady() {
+    window.print();
+    setPrintReport(null);
+    setExporting(null);
   }
 
   async function fetchProperties() {
@@ -209,6 +242,16 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const footerBrokers = selectedClient?.brokers ?? [];
 
   const propertyTypes = ['All', ...Array.from(new Set(properties.flatMap(p => propertyTypesOf(p))))];
+
+  // Everything assigned to the client currently being viewed — deliberately
+  // NOT the on-screen `filtered` list, so a search or type filter can't
+  // quietly drop properties out of an exported client report. Suite-level
+  // client visibility still applies.
+  const clientProperties = useMemo(() => properties
+    .filter(p => !activeClientId || (p.client_ids ?? []).includes(activeClientId))
+    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
+    .sort((a, b) => a.name.localeCompare(b.name)),
+    [properties, activeClientId]);
 
   const filtered = useMemo(() => properties
     .filter(p => {
@@ -507,6 +550,13 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             {desktopView === 'list' && (
               <div className="absolute inset-0 z-30 hidden md:block overflow-y-auto" style={{ backgroundColor: '#f0ede8' }}>
                 <div className="p-4 flex flex-col gap-4 max-w-6xl mx-auto">
+                  <ExportBar
+                    clientName={selectedClient?.company || selectedClient?.name || ''}
+                    count={clientProperties.length}
+                    exporting={exporting}
+                    onExcel={handleExportExcel}
+                    onPdf={handleExportPdf}
+                  />
                   {filtered.map(p => (
                     <ListViewRow
                       key={p.id}
@@ -635,6 +685,57 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         <div className="flex-1" />
         <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Beyond Real Estate.</p>
       </footer>
+
+      {/* Mounted only while exporting a PDF; prints itself once photos load */}
+      {printReport && <PrintSummary report={printReport} onReady={handlePrintReady} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ExportBar — per-client Property Summary Report export, above the List view
+// ---------------------------------------------------------------------------
+function ExportBar({ clientName, count, exporting, onExcel, onPdf }: {
+  clientName: string;
+  count: number;
+  exporting: 'excel' | 'pdf' | null;
+  onExcel: () => void;
+  onPdf: () => void;
+}) {
+  const busy = exporting !== null;
+  const btn = "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#7a8a87' }}>Property Summary Report</p>
+        <p className="text-xs mt-0.5" style={{ color: '#9aaba8' }}>
+          {count} propert{count === 1 ? 'y' : 'ies'}
+          {clientName ? ` for ${clientName}` : ' — all clients'}
+        </p>
+      </div>
+      <button
+        onClick={onExcel}
+        disabled={busy || count === 0}
+        className={btn}
+        style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
+        onMouseEnter={e => { if (!busy) e.currentTarget.style.backgroundColor = '#f0ede8'; }}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
+      >
+        <Download className="w-3.5 h-3.5" />
+        {exporting === 'excel' ? 'Building…' : 'Export Excel'}
+      </button>
+      <button
+        onClick={onPdf}
+        disabled={busy || count === 0}
+        className={btn}
+        style={{ backgroundColor: '#d41f27', color: 'white' }}
+        onMouseEnter={e => { if (!busy) e.currentTarget.style.backgroundColor = '#b81920'; }}
+        onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+      >
+        <Download className="w-3.5 h-3.5" />
+        {exporting === 'pdf' ? 'Preparing…' : 'Export PDF'}
+      </button>
     </div>
   );
 }
