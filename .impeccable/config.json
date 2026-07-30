@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "montserrat",
+        "createdAt": "2026-07-30T14:14:26.774Z",
+        "reason": "ECR brand font — used across the dashboard and the marketing Excel templates"
+      }
+    ]
+  }
+}
