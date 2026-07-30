@@ -822,9 +822,11 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
   const photoSrc = photos[0] ?? property.hero_image_url ?? null;
   const suites = property.suites ?? [];
   const rate = (r: number | null) => (r != null ? `$${Number(r).toFixed(2)}/SF` : 'Contact Broker');
-  // Sale suites quote price per SF, so the shared column drops the "Rental"
-  // qualifier as soon as one is present.
-  const anySale = suites.some(isSaleSuite);
+  // One shared column header for every suite in the row: "Price" when they're
+  // all for sale, the neutral "Rate" when the property mixes lease and sale
+  // suites, and "Rental Rate" otherwise.
+  const allSale = suites.length > 0 && suites.every(isSaleSuite);
+  const rateHeader = allSale ? 'Price' : suites.some(isSaleSuite) ? 'Rate' : 'Rental Rate';
 
   const colHeader = "text-xs pb-1 pr-6" ;
   const colHeaderStyle = { color: '#7a8a87', borderBottom: '1px solid #dedad3' };
@@ -897,7 +899,7 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
                 <tr className="text-left">
                   <th className={`${colHeader} font-normal w-[40%]`} style={colHeaderStyle}>Availability</th>
                   <th className={`${colHeader} font-normal w-[18%]`} style={colHeaderStyle}>Size</th>
-                  <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>{anySale ? 'Rate' : 'Rental Rate'}</th>
+                  <th className={`${colHeader} font-normal w-[22%]`} style={colHeaderStyle}>{rateHeader}</th>
                   <th className={`${colHeader} font-normal w-[20%]`} style={colHeaderStyle}>Date Available</th>
                 </tr>
               </thead>
