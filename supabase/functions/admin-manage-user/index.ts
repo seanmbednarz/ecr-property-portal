@@ -97,6 +97,37 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, user_id: userId, created: true });
   }
 
+  // ── DELETE ────────────────────────────────────────────────────────────
+  if (action === "delete") {
+    const targetId = payload.target_id;
+    if (!targetId) return json({ error: "Missing target_id" }, 400);
+    if (targetId === user.id) {
+      return json({ error: "You can't delete your own account" }, 400);
+    }
+
+    // Refuse to delete the last remaining admin.
+    const { data: target } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", targetId)
+      .maybeSingle();
+    if (target?.role === "admin") {
+      const { count } = await admin
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin");
+      if ((count ?? 0) <= 1) {
+        return json({ error: "Cannot delete the last remaining admin" }, 400);
+      }
+    }
+
+    // profiles.id references auth.users ON DELETE CASCADE, so the profile row
+    // is removed automatically.
+    const { error: delErr } = await admin.auth.admin.deleteUser(targetId);
+    if (delErr) return json({ error: delErr.message }, 400);
+    return json({ ok: true, user_id: targetId, deleted: true });
+  }
+
   // ── UPDATE (email and/or password) ────────────────────────────────────
   if (action === "update") {
     const targetId = payload.target_id;
@@ -114,5 +145,5 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, user_id: targetId });
   }
 
-  return json({ error: "Unknown action; expected 'create' or 'update'" }, 400);
+  return json({ error: "Unknown action; expected 'create', 'update', or 'delete'" }, 400);
 });

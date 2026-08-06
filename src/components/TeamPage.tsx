@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, RefreshCw, AlertTriangle, UserPlus, Pencil, X } from 'lucide-react';
+import { ShieldCheck, RefreshCw, AlertTriangle, UserPlus, Pencil, X, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { UserRole } from '../types';
 
@@ -47,17 +47,31 @@ async function manageUser(body: Record<string, unknown>): Promise<void> {
 
 interface UserModalProps {
   user: TeamUser | null; // null = add a new user
+  isSelf: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-function UserModal({ user, onClose, onSaved }: UserModalProps) {
+function UserModal({ user, isSelf, onClose, onSaved }: UserModalProps) {
   const isEdit = !!user;
   const [email, setEmail] = useState(user?.email ?? '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(user?.role ?? 'client');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState('');
+
+  async function handleDelete() {
+    setDeleting(true); setError('');
+    try {
+      await manageUser({ action: 'delete', target_id: user!.id });
+      onSaved();
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to delete.');
+      setDeleting(false);
+    }
+  }
 
   async function handleSave() {
     const cleanEmail = email.trim().toLowerCase();
@@ -122,13 +136,43 @@ function UserModal({ user, onClose, onSaved }: UserModalProps) {
           )}
 
           {error && <p className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}>{error}</p>}
+
+          {/* Delete confirmation */}
+          {isEdit && confirmDelete && (
+            <div className="rounded-lg px-3 py-3" style={{ backgroundColor: 'rgba(212,31,39,0.06)', border: '1px solid rgba(212,31,39,0.2)' }}>
+              <p className="text-xs font-semibold mb-2" style={{ color: '#d41f27' }}>
+                Permanently delete {user!.email}? Their login is removed immediately and this can't be undone.
+              </p>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setConfirmDelete(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Keep user</button>
+                <button onClick={handleDelete} disabled={deleting} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
+                  {deleting ? 'Deleting…' : 'Delete permanently'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 px-5 py-4" style={{ borderTop: '1px solid #e5e1d8' }}>
-          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
-            {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add User'}
-          </button>
+        <div className="flex items-center justify-between gap-3 px-5 py-4" style={{ borderTop: '1px solid #e5e1d8' }}>
+          {isEdit && !isSelf ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              title="Delete user"
+              aria-label="Delete user"
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: '#9aaba8' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#d41f27'; e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#9aaba8'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold" style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Add User'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -293,6 +337,7 @@ export default function TeamPage({ currentUserId }: TeamPageProps) {
         <UserModal
           key={modalUser ? modalUser.id : 'new'}
           user={modalUser}
+          isSelf={!!modalUser && modalUser.id === currentUserId}
           onClose={() => setModalUser(false)}
           onSaved={() => { setModalUser(false); fetchUsers(); }}
         />
