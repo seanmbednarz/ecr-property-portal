@@ -67,7 +67,8 @@ function SuiteTable({ title, suites, currentYear, sale = false }: {
   return (
     <div className="mt-10">
       <h2 className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: '#7a8a87' }}>{title}</h2>
-      <div className="rounded-xl overflow-hidden shadow-sm" style={{ border: '1px solid #e5e1d8' }}>
+      {/* Desktop: full table (lg and up) */}
+      <div className="hidden lg:block rounded-xl overflow-hidden shadow-sm" style={{ border: '1px solid #e5e1d8' }}>
         <div className="overflow-x-auto">
           <table className={`w-full text-sm ${sale ? 'min-w-[620px]' : 'min-w-[780px]'}`}>
             <thead>
@@ -118,6 +119,60 @@ function SuiteTable({ title, suites, currentYear, sale = false }: {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile & tablet: stacked cards (below lg) — no horizontal scroll */}
+      <div className="lg:hidden flex flex-col gap-3">
+        {suites.map((s) => {
+          const fullSvc = s.full_svc ?? (s.base_rent != null && s.op_exp != null ? s.base_rent + s.op_exp : null);
+          const annualRent = s.monthly_rent ?? (fullSvc != null && s.sf != null ? fullSvc * s.sf : null);
+          const monthlyRent = annualRent != null ? annualRent / 12 : null;
+          const fields: [string, string][] = sale
+            ? [
+                ['SQ FT', s.sf != null ? s.sf.toLocaleString() : '—'],
+                ['Price / SF', s.base_rent != null ? `${fmt$(s.base_rent)}/SF` : '—'],
+                ['Sale Price', fmtWhole(salePriceOf(s))],
+              ]
+            : [
+                ['SQ FT', s.sf != null ? s.sf.toLocaleString() : '—'],
+                ['Base Rent', s.base_rent != null ? `${fmt$(s.base_rent)}/SF` : '—'],
+                [`${currentYear} Op. Exp.`, s.op_exp != null ? `${fmt$(s.op_exp)}/SF` : '—'],
+                ['Full Svc. Rate', fullSvc != null ? `${fmt$(fullSvc)}/SF` : '—'],
+                ['Quoted Mo. Rent', fmtMo(monthlyRent)],
+                ['Quoted Annual Rent', annualRent != null ? `$${Math.round(annualRent).toLocaleString()}/yr` : '—'],
+              ];
+          const tourUrl = s.tour_url ? safeHttpUrl(s.tour_url) : null;
+          return (
+            <div key={s.id} className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: 'white', border: '1px solid #e5e1d8' }}>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="text-base font-bold" style={{ color: '#1e2624' }}>{s.suite_name}</span>
+                <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium shrink-0"
+                  style={s.available === 'Available Now'
+                    ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.2)' }
+                    : { backgroundColor: 'rgba(122,138,135,0.08)', color: '#7a8a87', border: '1px solid rgba(122,138,135,0.2)' }}
+                >{s.available ?? '—'}</span>
+              </div>
+              <div className="flex flex-col">
+                {fields.map(([label, value], idx) => (
+                  <div key={label} className="flex items-center justify-between gap-3 py-2" style={{ borderTop: idx === 0 ? 'none' : '1px solid #f0ede8' }}>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#7a8a87' }}>{label}</span>
+                    <span className="text-sm font-medium tabular-nums text-right" style={{ color: '#1e2624' }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              {tourUrl && (
+                <a href={tourUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-3 text-sm font-semibold" style={{ color: '#d41f27' }}>
+                  View Tour <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {s.notes && s.notes !== '—' && (
+                <p className="mt-3 text-xs leading-relaxed" style={{ color: '#7a8a87' }}>
+                  <span className="font-semibold uppercase tracking-wider">Notes · </span>{s.notes}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
