@@ -5,6 +5,7 @@
 // reaches the page. Available to everyone — clients included.
 
 import { Fragment, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import ECRLogo from '../../assets/ECR_Logo.svg';
 import { CompRow } from '../FinancialAnalysis';
 import { METRICS, GROUP_LABELS, DisplaySettings, MetricDef, labelOf } from '../../lib/financial/metrics';
@@ -18,11 +19,37 @@ interface Props {
   onDone: () => void;
 }
 
+// Hiding the app with `visibility: hidden` isn't enough: the sheet is a fixed,
+// scrollable overlay, and the dashboard shell around it is height-capped with
+// overflow hidden. Browsers then print a blank page. So instead we render this
+// at <body> level (see the portal below) and, for print, take the node out of
+// the overlay entirely — static flow, no clipping, no scroll viewport — while
+// display:none removes the app rather than leaving invisible boxes behind.
 const PRINT_CSS = `
 @media print {
-  body * { visibility: hidden !important; }
-  #ecr-fin-print, #ecr-fin-print * { visibility: visible !important; }
-  #ecr-fin-print { position: absolute !important; inset: 0 auto auto 0 !important; width: 100% !important; }
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body > *:not(#ecr-fin-print) { display: none !important; }
+  #ecr-fin-print {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    inset: auto !important;
+    width: auto !important;
+    height: auto !important;
+    z-index: auto !important;
+  }
+  /* Keep the ECR header bands and highlights instead of printing them white. */
+  #ecr-fin-print, #ecr-fin-print * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  #ecr-fin-print table { page-break-inside: auto; }
+  #ecr-fin-print tr { page-break-inside: avoid; break-inside: avoid; }
+  #ecr-fin-print thead { display: table-header-group; }
   @page { size: landscape; margin: 12mm; }
 }
 `;
@@ -33,18 +60,26 @@ export default function FinancialExport({ rows, display, clientName, npvRate, ke
   useEffect(() => {
     if (printed.current) return;
     printed.current = true;
-    // Let the branded sheet paint before handing off to the print dialog.
-    const t = window.setTimeout(() => {
-      window.print();
-      onDone();
-    }, 120);
-    return () => window.clearTimeout(t);
+    // Wait for the sheet to actually paint before opening the print dialog —
+    // two frames, then a short beat for fonts and the logo to settle.
+    let timer = 0;
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        timer = window.setTimeout(() => {
+          window.print();
+          onDone();
+        }, 150);
+      });
+    });
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(timer); };
   }, [onDone]);
 
   const groups: MetricDef['group'][] = ['financial', 'parking', 'nonfinancial'];
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  return (
+  // Rendered at <body> level so the print node isn't nested inside the
+  // dashboard's height-capped, overflow-hidden shell.
+  return createPortal(
     <>
       <style>{PRINT_CSS}</style>
       <div id="ecr-fin-print" className="fixed inset-0 overflow-auto z-[200]" style={{ backgroundColor: 'white' }}>
@@ -148,6 +183,7 @@ export default function FinancialExport({ rows, display, clientName, npvRate, ke
           </p>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
