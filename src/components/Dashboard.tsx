@@ -11,6 +11,7 @@ import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
 import FinancialAnalysis from './FinancialAnalysis';
+import TeamPage from './TeamPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
@@ -373,6 +374,9 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
 
       {/* Brokers tab */}
       {activeTab === 'brokers' && <BrokersPage clients={clients} />}
+
+      {/* Team tab */}
+      {activeTab === 'team' && <TeamPage currentUserId={profile?.id ?? null} />}
 
       {/* Clients tab */}
       {activeTab === 'clients' && (

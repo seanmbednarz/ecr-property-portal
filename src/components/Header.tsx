@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { Client, UserRole } from '../types';
 
-export type NavTab = 'properties' | 'financial' | 'clients' | 'brokers';
+export type NavTab = 'properties' | 'financial' | 'clients' | 'brokers' | 'team';
 
 interface HeaderProps {
   userEmail: string;
@@ -26,6 +26,7 @@ const ALL_TABS: { key: NavTab; label: string }[] = [
   { key: 'financial', label: 'Financial' },
   { key: 'clients', label: 'Clients' },
   { key: 'brokers', label: 'Brokers' },
+  { key: 'team', label: 'Team' },
 ];
 
 export default function Header({
