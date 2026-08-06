@@ -8,6 +8,19 @@
   font-family: Montserrat, sans-serif;
 }
 
+/* iOS Safari zooms the whole page in whenever a focused form field has a
+   font-size under 16px (tapping the search or login inputs), and the zoom
+   sticks for the site until the user pinches back out. Give touch devices
+   16px form controls so that never triggers; desktop keeps the denser 14px. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    /* !important to beat Tailwind's text-sm utility on these controls */
+    font-size: 16px !important;
+  }
+}
+
 /* Property Summary Report print view (PrintSummary.tsx). Hidden on screen;
    on print it replaces the app entirely so the PDF is just the report. */
 #print-summary {
