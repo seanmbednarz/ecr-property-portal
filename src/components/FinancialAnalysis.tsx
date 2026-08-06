@@ -10,7 +10,8 @@ import {
   METRICS, GROUP_LABELS, DisplaySettings, MetricDef, defaultDisplay, labelOf, DEFAULT_NPV_RATE,
 } from '../lib/financial/metrics';
 import {
-  Analysis, StoredWorkbook, loadAnalysis, saveAnalysis, fileToBase64, downloadWorkbook,
+  Analysis, StoredWorkbook, loadAnalysis, saveAnalysis, loadWorkbook,
+  fileToBase64, downloadWorkbook,
 } from '../lib/financial/storage';
 import FinancialSettings from './financial/FinancialSettings';
 import FinancialDealPage from './financial/FinancialDealPage';
@@ -43,6 +44,8 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [openDealId, setOpenDealId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -51,18 +54,33 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
 
   // Load whatever was saved for the client being viewed.
   useEffect(() => {
-    const a = loadAnalysis(clientId);
-    setDeals(a?.deals ?? []);
-    setSelectedStage(a?.selectedStage ?? {});
-    setDisplay(a?.display ?? defaultDisplay());
-    setNpvRate(a?.npvRate ?? DEFAULT_NPV_RATE);
-    setKeyDifferences(a?.keyDifferences ?? '');
-    setWorkbook(a?.workbook ?? null);
-    setSavedAt(a?.savedAt ?? null);
-    setSaveTarget(clientId);
-    setDirty(false);
+    let cancelled = false;
+    setLoading(true);
     setWarnings([]); setError(null); setNotice(null);
     setOpenDealId(null);
+    setSaveTarget(clientId);
+
+    (async () => {
+      const res = await loadAnalysis(clientId);
+      if (cancelled) return;   // client switched while the request was in flight
+      const a = res.analysis;
+      setDeals(a?.deals ?? []);
+      setSelectedStage(a?.selectedStage ?? {});
+      setDisplay(a?.display ?? defaultDisplay());
+      setNpvRate(a?.npvRate ?? DEFAULT_NPV_RATE);
+      setKeyDifferences(a?.keyDifferences ?? '');
+      setWorkbook(a?.workbook ?? null);
+      setSavedAt(res.fromLocalOnly ? null : (a?.savedAt ?? null));
+      // Work that only exists in this browser is unsaved by definition.
+      setDirty(res.fromLocalOnly);
+      if (res.error) setError(res.error);
+      else if (res.fromLocalOnly) {
+        setNotice('This analysis is only saved in this browser. Press Save to publish it to the client.');
+      }
+      setLoading(false);
+    })();
+
+    return () => { cancelled = true; };
   }, [clientId]);
 
   async function handleFile(e: ChangeEvent<HTMLInputElement>) {
@@ -91,7 +109,7 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     const target = clients.find(c => c.id === saveTarget);
     if (!target) {
       setError('Choose which client this analysis belongs to before saving.');
@@ -103,11 +121,36 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
       deals, selectedStage, display, npvRate, keyDifferences, workbook,
       savedAt: new Date().toISOString(),
     };
-    const res = saveAnalysis(analysis);
-    setDirty(false);
-    setSavedAt(analysis.savedAt);
-    setError(null);
-    setNotice(res.ok ? `Saved for ${analysis.clientName}.` : res.error);
+    setSaving(true);
+    const res = await saveAnalysis(analysis);
+    setSaving(false);
+    if (res.ok) {
+      setDirty(false);
+      setSavedAt(analysis.savedAt);
+      setError(null);
+      setNotice(`Saved for ${analysis.clientName} — they'll see this when they sign in.`);
+    } else {
+      // Still unsaved as far as the client is concerned, so keep it flagged.
+      setDirty(true);
+      setNotice(null);
+      setError(res.error ?? 'Save failed.');
+    }
+  }
+
+  /**
+   * The workbook's bytes aren't loaded with the analysis (they're large), so
+   * fetch them on demand the first time someone downloads.
+   */
+  async function handleDownloadWorkbook() {
+    if (!workbook) return;
+    if (workbook.base64) { downloadWorkbook(workbook); return; }
+    if (!clientId) return;
+    setBusy(true);
+    const wb = await loadWorkbook(clientId);
+    setBusy(false);
+    if (!wb) { setError("Couldn't fetch the saved spreadsheet."); return; }
+    setWorkbook(wb);           // cache it for repeat downloads
+    downloadWorkbook(wb);
   }
 
   // One comparison column per TERM OPTION — a deal quoting a 5-year and a
@@ -176,9 +219,9 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
               </button>
             )}
             {workbook && (
-              <button onClick={() => downloadWorkbook(workbook)} className={ghostBtn} style={ghostStyle}
+              <button onClick={handleDownloadWorkbook} disabled={busy} className={ghostBtn} style={ghostStyle}
                 title={`Download ${workbook.name}`}>
-                <Download className="w-3.5 h-3.5" /> Spreadsheet
+                <Download className="w-3.5 h-3.5" /> {busy ? 'Fetching…' : 'Spreadsheet'}
               </button>
             )}
             {canManage && (
@@ -216,11 +259,11 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
             </select>
             {dirty && <span className="text-xs" style={{ color: '#d41f27' }}>Unsaved changes</span>}
             <div className="flex-1" />
-            <button onClick={handleSave} disabled={!dirty || !saveTarget}
-              title={saveTarget ? 'Save this analysis' : 'Choose a client first'}
+            <button onClick={handleSave} disabled={!dirty || !saveTarget || saving}
+              title={saveTarget ? 'Save so the client can see this' : 'Choose a client first'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors disabled:opacity-40"
               style={{ backgroundColor: '#37423f', color: 'white' }}>
-              <Save className="w-3.5 h-3.5" /> Save
+              <Save className="w-3.5 h-3.5" /> {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         )}
@@ -229,7 +272,12 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
         {notice && <Banner tone="info" onDismiss={() => setNotice(null)}>{notice}</Banner>}
         {warnings.map((w, i) => <Banner key={i} tone="warn">{w}</Banner>)}
 
-        {rows.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <div className="w-5 h-5 border-2 rounded-full animate-spin"
+              style={{ borderColor: '#dedad3', borderTopColor: '#d41f27' }} />
+          </div>
+        ) : rows.length === 0 ? (
           <EmptyState canManage={canManage} />
         ) : (
           <>
