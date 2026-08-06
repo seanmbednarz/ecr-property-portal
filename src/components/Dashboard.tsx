@@ -10,6 +10,7 @@ import AddPropertyModal from './AddPropertyModal';
 import EditPropertyModal from './EditPropertyModal';
 import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
+import FinancialAnalysis from './FinancialAnalysis';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
@@ -359,6 +360,16 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         onTabChange={setActiveTab}
         onClientChange={isClient ? () => {} : setSelectedClientId}
       />
+
+      {/* Financial tab */}
+      {activeTab === 'financial' && (
+        <FinancialAnalysis
+          clientId={activeClientId}
+          clientName={selectedClient?.company || selectedClient?.name || ''}
+          clients={clients}
+          canManage={isAdmin || isBroker}
+        />
+      )}
 
       {/* Brokers tab */}
       {activeTab === 'brokers' && <BrokersPage clients={clients} />}
