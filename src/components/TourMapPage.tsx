@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Plus, X, GripVertical, Printer, MapPin, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, X, GripVertical, Printer, MapPin, Clock, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { Property } from '../types';
+import { supabase } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
 
 // Survey & tour builder: pick the properties to visit, put them in order, give
@@ -45,22 +46,23 @@ function nextSlotAfter(stops: TourStop[]): string {
   return TIME_SLOTS[idx + 1];
 }
 
-function storageKey(clientId: string | null) {
-  return `ecr-tour:${clientId ?? 'all'}`;
-}
-
 interface TourMapPageProps {
   properties: Property[];   // already filtered to the active client
   clientId: string | null;
   clientName: string;
+  canEdit: boolean;         // admins and brokers build the itinerary; clients read it
 }
 
-export default function TourMapPage({ properties, clientId, clientName }: TourMapPageProps) {
+export default function TourMapPage({ properties, clientId, clientName, canEdit }: TourMapPageProps) {
   const [stops, setStops] = useState<TourStop[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Guards the save effect from firing on the initial load of an existing tour.
+  const loadedFor = useRef<string | null>(null);
 
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -93,26 +95,60 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
     [properties, stops],
   );
 
-  // Restore this client's tour. Kept in localStorage: a tour is a working
-  // document, and this avoids a round trip to rebuild it after a refresh.
+  // Load this client's saved itinerary. Stored server-side so a tour built at
+  // a desk is there on a phone during the tour itself.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey(clientId));
-      setStops(raw ? (JSON.parse(raw) as TourStop[]) : []);
-    } catch {
-      setStops([]);
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setSaveError(null);
+      if (!clientId) {
+        // A tour belongs to a client; there's nothing to load in "All Clients".
+        if (!cancelled) { setStops([]); setLoading(false); loadedFor.current = null; }
+        return;
+      }
+      const { data, error } = await supabase
+        .from('client_tours')
+        .select('stops')
+        .eq('client_id', clientId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setSaveError("Couldn't load the saved itinerary.");
+        setStops([]);
+      } else {
+        setStops(Array.isArray(data?.stops) ? (data!.stops as TourStop[]) : []);
+      }
+      loadedFor.current = clientId;
+      setLoading(false);
     }
-    setHydrated(true);
+    load();
+    return () => { cancelled = true; };
   }, [clientId]);
 
+  // Persist changes. Debounced so dragging a row doesn't fire a write per frame.
   useEffect(() => {
-    if (!hydrated) return;
-    try {
-      localStorage.setItem(storageKey(clientId), JSON.stringify(stops));
-    } catch {
-      // Storage full or blocked — the tour still works for this session.
-    }
-  }, [stops, clientId, hydrated]);
+    if (!clientId || !canEdit) return;
+    if (loadedFor.current !== clientId) return; // don't save the load itself
+    setSaveState('saving');
+    const handle = setTimeout(async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from('client_tours')
+        .upsert(
+          { client_id: clientId, stops, updated_by: user?.id ?? null },
+          { onConflict: 'client_id' },
+        );
+      if (error) {
+        setSaveState('error');
+        setSaveError(`Couldn't save: ${error.message}`);
+      } else {
+        setSaveState('saved');
+        setSaveError(null);
+      }
+    }, 600);
+    return () => clearTimeout(handle);
+  }, [stops, clientId, canEdit]);
 
   useEffect(() => {
     if (!showAdd) return;
@@ -287,8 +323,19 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
           <div>
             <h1 className="text-xl font-extrabold uppercase tracking-wide" style={{ color: '#1e2624' }}>Survey &amp; Tour Map</h1>
             <p className="text-sm mt-0.5" style={{ color: '#7a8a87' }}>
-              {clientName ? `${clientName} — ` : ''}Build the tour itinerary, set times, and see the walking route.
+              {clientName ? `${clientName} — ` : ''}
+              {canEdit
+                ? 'Build the tour itinerary, set times, and see the walking route.'
+                : 'Your tour itinerary and walking route.'}
             </p>
+            {canEdit && clientId && saveState !== 'idle' && (
+              <p className="text-xs mt-1 flex items-center gap-1.5"
+                style={{ color: saveState === 'error' ? '#d41f27' : '#9aaba8' }}>
+                {saveState === 'saving' && <><Loader2 className="w-3 h-3 animate-spin" /> Saving…</>}
+                {saveState === 'saved' && <><Check className="w-3 h-3" /> Saved — this itinerary is available on any device</>}
+                {saveState === 'error' && <><AlertTriangle className="w-3 h-3" /> {saveError ?? 'Save failed'}</>}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {resolved.length > 0 && (
@@ -300,6 +347,7 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
                 <Printer className="w-3.5 h-3.5" /> Save as PDF
               </button>
             )}
+            {canEdit && clientId && (
             <div className="relative" ref={addRef}>
               <button
                 onClick={() => setShowAdd(v => !v)}
@@ -330,11 +378,26 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
 
         {/* Itinerary first — the map is the reference, this is the document. */}
-        {resolved.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: '#dedad3', borderTopColor: '#d41f27' }} />
+          </div>
+        ) : !clientId ? (
+          <div className="rounded-2xl px-6 py-14 text-center" style={{ backgroundColor: 'white', border: '1px dashed #dedad3' }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: '#f0ede8' }}>
+              <MapPin className="w-5 h-5" style={{ color: '#7a8a87' }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: '#3a4a47' }}>Choose a client first</p>
+            <p className="text-xs mt-1" style={{ color: '#9aaba8' }}>
+              A tour is built from one client's properties — pick one from “Viewing as” above.
+            </p>
+          </div>
+        ) : resolved.length === 0 ? (
           <div className="rounded-2xl px-6 py-14 text-center" style={{ backgroundColor: 'white', border: '1px dashed #dedad3' }}>
             <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: '#f0ede8' }}>
               <MapPin className="w-5 h-5" style={{ color: '#7a8a87' }} />
@@ -343,7 +406,9 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
             <p className="text-xs mt-1" style={{ color: '#9aaba8' }}>
               {properties.length === 0
                 ? 'No properties are assigned to this client yet.'
-                : 'Use “Add stop” to build the itinerary.'}
+                : canEdit
+                  ? 'Use “Add stop” to build the itinerary.'
+                  : 'Your broker hasn’t added any stops yet.'}
             </p>
           </div>
         ) : (
@@ -352,7 +417,7 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
               <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#7a8a87' }}>
                 Itinerary · {resolved.length} {resolved.length === 1 ? 'stop' : 'stops'}
               </p>
-              <button onClick={clearAll} className="text-xs font-semibold" style={{ color: '#9aaba8' }}>Clear all</button>
+              {canEdit && <button onClick={clearAll} className="text-xs font-semibold" style={{ color: '#9aaba8' }}>Clear all</button>}
             </div>
 
             <div className="rounded-2xl overflow-hidden mb-3" style={{ backgroundColor: 'white', border: '1px solid #e5e1d8' }}>
@@ -362,20 +427,20 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
                 return (
                   <div
                     key={p.id}
-                    draggable
-                    onDragStart={() => setDragIndex(i)}
+                    draggable={canEdit}
+                    onDragStart={() => canEdit && setDragIndex(i)}
                     onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
-                    onDragOver={e => { e.preventDefault(); setOverIndex(i); }}
-                    onDrop={e => { e.preventDefault(); if (dragIndex !== null) move(dragIndex, i); setDragIndex(null); setOverIndex(null); }}
+                    onDragOver={e => { if (canEdit) { e.preventDefault(); setOverIndex(i); } }}
+                    onDrop={e => { if (!canEdit) return; e.preventDefault(); if (dragIndex !== null) move(dragIndex, i); setDragIndex(null); setOverIndex(null); }}
                     className="flex items-center gap-3 px-4 py-3"
                     style={{
                       borderTop: i === 0 ? 'none' : '1px solid #f0ede8',
                       backgroundColor: overIndex === i && dragIndex !== null && dragIndex !== i ? '#f7f5f1' : 'white',
                       opacity: dragIndex === i ? 0.4 : 1,
-                      cursor: 'grab',
+                      cursor: canEdit ? 'grab' : 'default',
                     }}
                   >
-                    <GripVertical className="w-4 h-4 shrink-0" style={{ color: '#c8c3b8' }} />
+                    {canEdit && <GripVertical className="w-4 h-4 shrink-0" style={{ color: '#c8c3b8' }} />}
                     <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                       style={{ backgroundColor: '#2a3330' }}>{i + 1}</span>
                     <div className="min-w-0 flex-1">
@@ -389,15 +454,20 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <Clock className="w-3.5 h-3.5" style={{ color: '#9aaba8' }} />
-                      <select
-                        value={r.stop.time}
-                        onChange={e => setTime(p.id, e.target.value)}
-                        className="rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
-                        style={{ backgroundColor: '#f5f2ec', border: '1px solid #e5e1d8', color: '#3a4a47' }}
-                      >
-                        {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-                      </select>
+                      {canEdit ? (
+                        <select
+                          value={r.stop.time}
+                          onChange={e => setTime(p.id, e.target.value)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
+                          style={{ backgroundColor: '#f5f2ec', border: '1px solid #e5e1d8', color: '#3a4a47' }}
+                        >
+                          {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs font-semibold" style={{ color: '#3a4a47' }}>{formatTime(r.stop.time)}</span>
+                      )}
                     </div>
+                    {canEdit && (
                     <button
                       onClick={() => removeStop(p.id)}
                       title={`Remove ${p.name}`}
@@ -409,11 +479,12 @@ export default function TourMapPage({ properties, clientId, clientName }: TourMa
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
+                    )}
                   </div>
                 );
               })}
             </div>
-            <p className="text-xs mb-6" style={{ color: '#9aaba8' }}>Drag a row to reorder — the route updates to match.</p>
+            {canEdit && <p className="text-xs mb-6" style={{ color: '#9aaba8' }}>Drag a row to reorder — the route updates to match.</p>}
           </>
         )}
 
