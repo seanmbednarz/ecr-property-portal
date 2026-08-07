@@ -15,3 +15,9 @@ const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string) || SUPABASE_UR
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Exported for the few places that call an edge function directly rather than
+// through the client — notably sign-in by username, which has no user session
+// yet but still has to satisfy the platform's JWT check.
+export const SUPABASE_URL_RESOLVED = supabaseUrl;
+export const SUPABASE_ANON_KEY_RESOLVED = supabaseAnonKey;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, SUPABASE_URL_RESOLVED, SUPABASE_ANON_KEY_RESOLVED } from '../lib/supabase';
 import { Lock, Mail, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 
@@ -28,10 +28,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     if (identifier && !identifier.includes('@')) {
       try {
         const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/login-with-username`,
+          `${SUPABASE_URL_RESOLVED}/functions/v1/login-with-username`,
           {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              // No user session exists yet, but the platform still requires a
+              // JWT on every function call — the anon key satisfies that.
+              apikey: SUPABASE_ANON_KEY_RESOLVED,
+              Authorization: `Bearer ${SUPABASE_ANON_KEY_RESOLVED}`,
+            },
             body: JSON.stringify({ username: identifier, password }),
           },
         );
