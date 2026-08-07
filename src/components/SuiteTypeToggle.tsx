@@ -1,16 +1,19 @@
 import { SuiteListingType } from '../types';
+import { SUITE_LISTING_TYPES, suiteTypeLabel, suiteTypeColor } from '../lib/propertyMeta';
 
-// Per-suite lease/sale switch used by the add and edit property forms. Lease
-// is the default; picking Sale swaps op. exp. for a sale price on the row and
-// makes the suite render in the detail page's For Sale table.
+// Per-suite listing-type switch used by the add and edit property forms. Lease
+// is the default. Picking Sale swaps op. exp. for a sale price on the row and
+// makes the suite render in the detail page's For Sale table; sublease and
+// coworking quote rent like lease and only change the label.
 export default function SuiteTypeToggle({ value, onChange }: {
   value: SuiteListingType;
   onChange: (t: SuiteListingType) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5 mb-2">
-      {(['lease', 'sale'] as SuiteListingType[]).map(t => {
+    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+      {SUITE_LISTING_TYPES.map(t => {
         const on = value === t;
+        const color = suiteTypeColor({ listing_type: t });
         return (
           <button
             key={t}
@@ -18,10 +21,10 @@ export default function SuiteTypeToggle({ value, onChange }: {
             onClick={() => onChange(t)}
             className="px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors"
             style={on
-              ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.3)' }
+              ? { backgroundColor: `${color}14`, color, border: `1px solid ${color}4d` }
               : { color: '#9aaba8', border: '1px solid #dedad3', backgroundColor: 'white' }}
           >
-            {t === 'lease' ? 'For Lease' : 'For Sale'}
+            {suiteTypeLabel({ listing_type: t })}
           </button>
         );
       })}

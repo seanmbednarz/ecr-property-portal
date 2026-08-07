@@ -31,10 +31,36 @@ export function listingStatusOf(p: { listing_status?: string[] | null }): string
   return p.listing_status ?? [];
 }
 
-// ─── Suite lease vs. sale ───────────────────────────────────────────────────
-// Each suite is quoted either for lease (default) or for sale. Sale suites
-// read base_rent as price per SF, ignore op. exp., and headline sale_price
-// (falling back to price/SF × SF) instead of monthly/annual rent.
+// ─── Suite listing type ─────────────────────────────────────────────────────
+// A suite is quoted as lease (default), sublease, sale, or coworking. Only
+// 'sale' changes the numbers: it reads base_rent as price per SF, ignores op.
+// exp., and headlines sale_price (falling back to price/SF × SF) instead of
+// monthly/annual rent. Sublease and coworking quote rent exactly like lease
+// and differ only in how the space is labelled.
+
+export const SUITE_LISTING_TYPES = ['lease', 'sublease', 'sale', 'coworking'] as const;
+
+const SUITE_TYPE_LABELS: Record<string, string> = {
+  lease: 'For Lease',
+  sublease: 'For Sublease',
+  sale: 'For Sale',
+  coworking: 'Coworking',
+};
+
+const SUITE_TYPE_COLORS: Record<string, string> = {
+  lease: '#d41f27',
+  sublease: '#2b6cb0',
+  sale: '#2e7d4f',
+  coworking: '#7a4f1a',
+};
+
+export function suiteTypeLabel(s: { listing_type?: string | null }): string {
+  return SUITE_TYPE_LABELS[s.listing_type ?? 'lease'] ?? SUITE_TYPE_LABELS.lease;
+}
+
+export function suiteTypeColor(s: { listing_type?: string | null }): string {
+  return SUITE_TYPE_COLORS[s.listing_type ?? 'lease'] ?? SUITE_TYPE_COLORS.lease;
+}
 
 export function isSaleSuite(s: { listing_type?: string | null }): boolean {
   return s.listing_type === 'sale';

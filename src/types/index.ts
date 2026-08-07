@@ -29,11 +29,13 @@ export interface Property {
   client_ids?: string[];
   slug: string;
   created_at: string;
+  // Maintained by DB triggers (migration 27) on property and suite writes.
+  updated_at?: string;
   suites?: Suite[];
   brokers?: Broker[];
 }
 
-export type SuiteListingType = 'lease' | 'sale';
+export type SuiteListingType = 'lease' | 'sublease' | 'sale' | 'coworking';
 
 export interface Suite {
   id: string;

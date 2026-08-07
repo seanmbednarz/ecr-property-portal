@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
 import { Property, Client, SuiteListingType } from '../types';
-import { PROPERTY_TYPES, LISTING_STATUSES, statusColor } from '../lib/propertyMeta';
+import { PROPERTY_TYPES, LISTING_STATUSES, statusColor, SUITE_LISTING_TYPES } from '../lib/propertyMeta';
 import { AddressSuggestion, searchAddresses, geocodeAddress } from '../lib/geocode';
 import SuiteTypeToggle, { salePricePlaceholder } from './SuiteTypeToggle';
 
@@ -148,7 +148,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
     (property.suites ?? []).map(s => ({
       id: s.id,
       suite_name: s.suite_name ?? '',
-      listing_type: s.listing_type === 'sale' ? 'sale' : 'lease',
+      listing_type: SUITE_LISTING_TYPES.includes(s.listing_type as any) ? s.listing_type! : 'lease',
       sf: s.sf != null ? String(s.sf) : '',
       base_rent: s.base_rent != null ? String(s.base_rent) : '',
       op_exp: s.op_exp != null ? String(s.op_exp) : '',

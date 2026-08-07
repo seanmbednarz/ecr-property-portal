@@ -5,7 +5,7 @@ import { Property, Client, Suite } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor, isSaleSuite, salePriceOf } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, isSaleSuite, salePriceOf, suiteTypeLabel, suiteTypeColor } from '../lib/propertyMeta';
 import { supabase } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
 
@@ -85,7 +85,16 @@ function SuiteTable({ title, suites, currentYear, sale = false }: {
                 const monthlyRent = annualRent != null ? annualRent / 12 : null;
                 return (
                   <tr key={s.id} style={{ backgroundColor: i % 2 === 0 ? '#f5f2ec' : 'white', borderBottom: i < suites.length - 1 ? '1px solid #e5e1d8' : 'none' }}>
-                    <td className="px-4 py-3 font-semibold" style={{ color: '#1e2624' }}>{s.suite_name}</td>
+                    <td className="px-4 py-3 font-semibold" style={{ color: '#1e2624' }}>
+                      <span>{s.suite_name}</span>
+                      {/* Only tag the non-default types; plain lease suites stay clean */}
+                      {s.listing_type && s.listing_type !== 'lease' && (
+                        <span className="ml-2 inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider align-middle"
+                          style={{ color: suiteTypeColor(s), backgroundColor: `${suiteTypeColor(s)}14`, border: `1px solid ${suiteTypeColor(s)}40` }}>
+                          {suiteTypeLabel(s)}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.sf != null ? s.sf.toLocaleString() : '—'}</td>
                     <td className="px-4 py-3 tabular-nums" style={{ color: '#3a4a47' }}>{s.base_rent != null ? `${fmt$(s.base_rent)}/SF` : '—'}</td>
                     {sale ? (
@@ -145,7 +154,15 @@ function SuiteTable({ title, suites, currentYear, sale = false }: {
           return (
             <div key={s.id} className="rounded-xl p-4 shadow-sm" style={{ backgroundColor: 'white', border: '1px solid #e5e1d8' }}>
               <div className="flex items-center justify-between gap-3 mb-2">
-                <span className="text-base font-bold" style={{ color: '#1e2624' }}>{s.suite_name}</span>
+                <span className="text-base font-bold flex items-center gap-2 min-w-0" style={{ color: '#1e2624' }}>
+                  <span className="truncate">{s.suite_name}</span>
+                  {s.listing_type && s.listing_type !== 'lease' && (
+                    <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0"
+                      style={{ color: suiteTypeColor(s), backgroundColor: `${suiteTypeColor(s)}14`, border: `1px solid ${suiteTypeColor(s)}40` }}>
+                      {suiteTypeLabel(s)}
+                    </span>
+                  )}
+                </span>
                 <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium shrink-0"
                   style={s.available === 'Available Now'
                     ? { backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27', border: '1px solid rgba(212,31,39,0.2)' }
@@ -389,6 +406,20 @@ export default function PropertyDetailPage({
 
   const now = new Date();
   const currentYear = now.getFullYear();
+
+  // "Last updated" — relative for anything recent, absolute date once it's old
+  // enough that "42 days ago" stops being easier to read than the date.
+  const lastUpdatedLabel = (() => {
+    const raw = property.updated_at;
+    if (!raw) return null;
+    const then = new Date(raw);
+    if (isNaN(then.getTime())) return null;
+    const days = Math.floor((now.getTime() - then.getTime()) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days ago`;
+    return then.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  })();
 
   const specs: { label: string; value: string }[] = [
     { label: 'Type', value: propertyTypesOf(property).join(' / ') || '—' },
@@ -725,6 +756,11 @@ export default function PropertyDetailPage({
                 </div>
               ))}
             </div>
+            {lastUpdatedLabel && (
+              <p className="text-xs mt-2 px-1" style={{ color: '#9aaba8' }}>
+                Last updated {lastUpdatedLabel}
+              </p>
+            )}
           </div>
         </div>
 
@@ -732,7 +768,11 @@ export default function PropertyDetailPage({
             columns, so each group gets its own table. */}
         {leaseSuites.length > 0 && (
           <SuiteTable
-            title={saleSuites.length > 0 ? 'Available Suites — For Lease' : 'Available Suites'}
+            title={saleSuites.length > 0
+              ? (leaseSuites.every(s => !s.listing_type || s.listing_type === 'lease')
+                  ? 'Available Suites — For Lease'
+                  : 'Available Suites — For Lease / Sublease')
+              : 'Available Suites'}
             suites={leaseSuites}
             currentYear={currentYear}
           />

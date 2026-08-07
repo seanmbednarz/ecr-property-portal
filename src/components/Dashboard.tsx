@@ -315,7 +315,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         {notesProperty && (
           <NotesDrawer
             property={notesProperty}
-            userEmail={userEmail}
+            isAdmin={isAdmin}
             onClose={() => setNotesProperty(null)}
             onNotesCountChange={handleNotesCountChange}
           />
@@ -630,7 +630,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         {notesProperty && (
           <NotesDrawer
             property={notesProperty}
-            userEmail={userEmail}
+            isAdmin={isAdmin}
             onClose={() => setNotesProperty(null)}
             onNotesCountChange={handleNotesCountChange}
           />

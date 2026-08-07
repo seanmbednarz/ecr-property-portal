@@ -1,17 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Edit3, Check, MessageSquare } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Property, Note } from '../types';
 
+// Notes are short tags, not essays — the DB enforces the same cap.
+const NOTE_MAX = 30;
+
+// A note plus who wrote it. author_label is their username when set, else their
+// email; is_mine drives whether edit/delete show.
+interface NoteWithAuthor extends Note {
+  author_label: string;
+  is_mine: boolean;
+}
+
 interface NotesDrawerProps {
   property: Property;
-  userEmail: string;
+  isAdmin?: boolean;
   onClose: () => void;
   onNotesCountChange: (propertyId: string, count: number) => void;
 }
 
-export default function NotesDrawer({ property, userEmail, onClose, onNotesCountChange }: NotesDrawerProps) {
-  const [notes, setNotes] = useState<Note[]>([]);
+export default function NotesDrawer({ property, isAdmin = false, onClose, onNotesCountChange }: NotesDrawerProps) {
+  const [notes, setNotes] = useState<NoteWithAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [newContent, setNewContent] = useState('');
   const [saving, setSaving] = useState(false);
@@ -24,34 +34,30 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
 
   async function fetchNotes() {
     setLoading(true);
+    // RPC rather than a plain select: it joins the author label, which lives in
+    // auth.users / profiles and isn't readable directly from the browser.
     const { data, error } = await supabase
-      .from('property_notes')
-      .select('*')
-      .eq('property_id', property.id)
-      .order('created_at', { ascending: false });
+      .rpc('property_notes_with_authors', { p_property_id: property.id });
     if (!error && data) {
-      setNotes(data as Note[]);
-      onNotesCountChange(property.id, data.length);
+      setNotes(data as NoteWithAuthor[]);
+      onNotesCountChange(property.id, (data as unknown[]).length);
     }
     setLoading(false);
   }
 
   async function handleAdd() {
-    const trimmed = newContent.trim();
+    const trimmed = newContent.trim().slice(0, NOTE_MAX);
     if (!trimmed) return;
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setSaving(false); return; }
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('property_notes')
-      .insert({ property_id: property.id, content: trimmed, user_id: user.id })
-      .select()
-      .single();
-    if (!error && data) {
-      const updated = [data as Note, ...notes];
-      setNotes(updated);
-      onNotesCountChange(property.id, updated.length);
+      .insert({ property_id: property.id, content: trimmed, user_id: user.id });
+    if (!error) {
       setNewContent('');
+      // Refetch so the new note comes back with its author label attached.
+      await fetchNotes();
     }
     setSaving(false);
   }
@@ -125,10 +131,11 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
         <div className="p-4" style={{ borderBottom: '1px solid rgba(136,152,147,0.15)' }}>
           <textarea
             value={newContent}
-            onChange={(e) => setNewContent(e.target.value)}
+            onChange={(e) => setNewContent(e.target.value.slice(0, NOTE_MAX))}
             onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAdd(); }}
-            placeholder="Write a note about this property…"
-            rows={3}
+            placeholder="Short note, e.g. Too small for us"
+            maxLength={NOTE_MAX}
+            rows={2}
             className="w-full text-white resize-none focus:outline-none transition-colors rounded-xl px-4 py-3"
             style={{
               backgroundColor: '#37423f',
@@ -140,7 +147,9 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
             onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(136,152,147,0.25)'; e.currentTarget.style.boxShadow = 'none'; }}
           />
           <div className="flex items-center justify-between mt-2">
-            <p className="text-xs" style={{ color: 'rgba(136,152,147,0.4)' }}>Cmd+Enter to save</p>
+            <p className="text-xs" style={{ color: newContent.length >= NOTE_MAX ? '#d41f27' : 'rgba(136,152,147,0.4)' }}>
+              {newContent.length}/{NOTE_MAX} · Cmd+Enter to save
+            </p>
             <button
               onClick={handleAdd}
               disabled={!newContent.trim() || saving}
@@ -186,8 +195,9 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
                   <div>
                     <textarea
                       value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      rows={3}
+                      onChange={(e) => setEditContent(e.target.value.slice(0, NOTE_MAX))}
+                      maxLength={NOTE_MAX}
+                      rows={2}
                       autoFocus
                       className="w-full text-white resize-none focus:outline-none rounded-lg px-3 py-2 transition-colors"
                       style={{ backgroundColor: '#37423f', border: '1px solid rgba(136,152,147,0.3)', fontSize: '16px' }}
@@ -215,15 +225,17 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
                       {note.content}
                     </p>
                     <div className="flex items-center justify-between mt-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-xs font-medium" style={{ color: 'rgba(181,197,193,0.7)' }}>
-                          {userEmail}
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-xs font-medium truncate" style={{ color: 'rgba(181,197,193,0.7)' }}>
+                          {note.author_label}{note.is_mine && ' (you)'}
                         </span>
                         <span className="text-xs" style={{ color: 'rgba(136,152,147,0.5)' }}>
                           {formatDate(note.created_at)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Only your own notes are editable; admins may also delete others'. */}
+                        {note.is_mine && (
                         <button
                           onClick={() => { setEditingId(note.id); setEditContent(note.content); }}
                           className="p-1.5 rounded-lg transition-colors"
@@ -233,6 +245,8 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
+                        )}
+                        {(note.is_mine || isAdmin) && (
                         <button
                           onClick={() => handleDelete(note.id)}
                           className="p-1.5 rounded-lg transition-colors"
@@ -242,6 +256,7 @@ export default function NotesDrawer({ property, userEmail, onClose, onNotesCount
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
+                        )}
                       </div>
                     </div>
                   </>

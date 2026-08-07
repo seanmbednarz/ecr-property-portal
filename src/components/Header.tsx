@@ -291,8 +291,13 @@ export default function Header({
                 </div>
               )}
 
-              {/* Contact + sign out */}
+              {/* Signed-in user + contact + sign out */}
               <div className="p-3 border-t flex flex-col gap-3" style={{ borderColor: 'rgba(136,152,147,0.15)' }}>
+                {userEmail && (
+                  <p className="px-1 text-xs truncate" style={{ color: '#889893' }}>
+                    Signed in as <span className="font-semibold" style={{ color: '#b5c5c1' }}>{userEmail}</span>
+                  </p>
+                )}
                 <div className="flex items-center gap-3 px-1">
                   <a href="tel:5125050000" className="text-xs font-medium" style={{ color: '#b5c5c1' }}>512.505.0000</a>
                   <a href="https://ecrtx.com" target="_blank" rel="noopener noreferrer" className="text-xs font-medium uppercase tracking-widest" style={{ color: '#d41f27' }}>ECRTX.COM</a>
