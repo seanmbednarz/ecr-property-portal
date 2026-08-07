@@ -19,7 +19,47 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setError(null);
     setLoading(true);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    const identifier = email.trim();
+
+    // No "@" means it's a username. Client teams share one login, so they sign
+    // in with a shared name rather than passing an inbox address around. The
+    // exchange happens in an edge function so the browser never sees the email
+    // behind a username.
+    if (identifier && !identifier.includes('@')) {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/login-with-username`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: identifier, password }),
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(body.error ?? 'Invalid username or password. Please try again.');
+          setLoading(false);
+          return;
+        }
+        const { error: sessErr } = await supabase.auth.setSession({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+        });
+        if (sessErr) {
+          setError('Signed in, but the session could not be started. Please try again.');
+          setLoading(false);
+          return;
+        }
+        onLogin();
+        return;
+      } catch {
+        setError("Can't reach the sign-in service. Check your internet connection and try again.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: identifier.toLowerCase(), password });
 
     if (authError) {
       // A request that never reached Supabase — blocked office network,
@@ -33,7 +73,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           ? "Can't reach the sign-in service. Check your internet connection and try again."
           : status >= 500
             ? 'The sign-in service is temporarily unavailable. Please try again in a moment.'
-            : 'Invalid email or password. Please try again.'
+            : 'Invalid login or password. Please try again.'
       );
       setLoading(false);
       return;
@@ -116,7 +156,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   className="block text-sm font-medium mb-2"
                   style={{ color: '#b5c5c1' }}
                 >
-                  Email
+                  Email or username
                 </label>
                 <div className="relative">
                   <Mail
@@ -124,12 +164,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     style={{ color: '#889893' }}
                   />
                   <input
-                    type="email"
+                    // Deliberately "text", not "email": client teams sign in
+                    // with a shared username, which type="email" would reject.
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="email"
-                    placeholder="you@ecrtx.com"
+                    autoComplete="username"
+                    placeholder="you@ecrtx.com or username"
                     className="w-full text-white placeholder-ecr-gray rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none transition-colors"
                     style={{
                       backgroundColor: '#37423f',

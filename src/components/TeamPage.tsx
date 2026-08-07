@@ -6,6 +6,8 @@ import { UserRole } from '../types';
 interface TeamUser {
   id: string;
   email: string;
+  // Optional second way to sign in, aimed at client teams sharing one login.
+  username: string | null;
   role: UserRole;
   broker_id: string | null;
   client_id: string | null;
@@ -30,7 +32,7 @@ function formatDate(iso: string) {
 }
 
 // Calls the admin-manage-user edge function with the caller's session token.
-async function manageUser(body: Record<string, unknown>): Promise<void> {
+async function manageUser(body: Record<string, unknown>): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
   const res = await fetch(
@@ -43,6 +45,7 @@ async function manageUser(body: Record<string, unknown>): Promise<void> {
   );
   const jsonBody = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(jsonBody.error ?? `Request failed (${res.status})`);
+  return jsonBody;
 }
 
 interface UserModalProps {
@@ -55,6 +58,7 @@ interface UserModalProps {
 function UserModal({ user, isSelf, onClose, onSaved }: UserModalProps) {
   const isEdit = !!user;
   const [email, setEmail] = useState(user?.email ?? '');
+  const [username, setUsername] = useState(user?.username ?? '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(user?.role ?? 'client');
   const [saving, setSaving] = useState(false);
@@ -79,16 +83,33 @@ function UserModal({ user, isSelf, onClose, onSaved }: UserModalProps) {
     if (!isEdit && password.trim().length < 6) { setError('Password must be at least 6 characters.'); return; }
     if (isEdit && password.trim() && password.trim().length < 6) { setError('Password must be at least 6 characters.'); return; }
 
+    const cleanUsername = username.trim();
+    if (cleanUsername && !/^[A-Za-z0-9._-]{3,32}$/.test(cleanUsername)) {
+      setError('Username must be 3–32 characters: letters, numbers, dot, dash, underscore.');
+      return;
+    }
+
     setSaving(true); setError('');
     try {
+      let targetId = user?.id;
       if (isEdit) {
         const body: Record<string, unknown> = { action: 'update', target_id: user!.id };
         if (cleanEmail !== user!.email) body.email = cleanEmail;
         if (password.trim()) body.password = password.trim();
-        if (!body.email && !body.password) { onClose(); return; }
-        await manageUser(body);
+        if (body.email || body.password) await manageUser(body);
       } else {
-        await manageUser({ action: 'create', email: cleanEmail, password: password.trim(), role });
+        const created = await manageUser({ action: 'create', email: cleanEmail, password: password.trim(), role });
+        targetId = (created as any)?.user_id ?? undefined;
+      }
+
+      // Username lives on profiles, so it's a separate call from the auth-side
+      // email/password update. Only sent when it actually changed.
+      if (targetId && cleanUsername !== (user?.username ?? '')) {
+        const { error: unErr } = await supabase.rpc('admin_set_username', {
+          target_id: targetId,
+          new_username: cleanUsername,
+        });
+        if (unErr) throw new Error(unErr.message);
       }
       onSaved();
     } catch (err: any) {
@@ -118,6 +139,14 @@ function UserModal({ user, isSelf, onClose, onSaved }: UserModalProps) {
           <div>
             <label className={lbl} style={lblStyle}>Email (login)</label>
             <input type="email" className={inp} style={inpStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="name@ecrtx.com" autoComplete="off" {...focus} />
+          </div>
+
+          <div>
+            <label className={lbl} style={lblStyle}>Username (optional)</label>
+            <input className={inp} style={inpStyle} value={username} onChange={e => setUsername(e.target.value)} placeholder="e.g. roktteam" autoComplete="off" {...focus} />
+            <p className="text-xs mt-1" style={{ color: '#9aaba8' }}>
+              A second way to sign in — handy when a client team shares one login. Their email still works.
+            </p>
           </div>
 
           <div>
@@ -287,6 +316,12 @@ export default function TeamPage({ currentUserId }: TeamPageProps) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold truncate" style={{ color: '#1e2624' }}>{u.email}</span>
+                      {u.username && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" title="Can also sign in with this username"
+                          style={{ backgroundColor: 'rgba(26,79,138,0.10)', color: '#1a4f8a', border: '1px solid rgba(26,79,138,0.25)' }}>
+                          @{u.username}
+                        </span>
+                      )}
                       {isSelf && (
                         <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ backgroundColor: '#f0ede8', color: '#7a8a87' }}>You</span>
                       )}
