@@ -23,7 +23,8 @@
 
 /* Property Summary Report print view (PrintSummary.tsx). Hidden on screen;
    on print it replaces the app entirely so the PDF is just the report. */
-#print-summary {
+#print-summary,
+#print-tour {
   display: none;
 }
 
@@ -37,8 +38,15 @@
     display: none !important;
   }
 
-  #print-summary {
+  #print-summary,
+  #print-tour {
     display: block;
+  }
+
+  /* Keep the red rule and header fills in the printed itinerary. */
+  #print-tour * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* Keep the red header band and alternating row fills in the PDF — browsers

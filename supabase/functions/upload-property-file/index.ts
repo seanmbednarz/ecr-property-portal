@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const ALLOWED_BUCKETS = ["property-photos", "brochures", "client-logos"];
+const ALLOWED_BUCKETS = ["property-photos", "brochures", "client-logos", "property-documents"];
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {

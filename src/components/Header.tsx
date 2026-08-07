@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { Client, UserRole } from '../types';
 
-export type NavTab = 'properties' | 'financial' | 'clients' | 'brokers' | 'team';
+export type NavTab = 'properties' | 'financial' | 'tour' | 'clients' | 'brokers' | 'team';
 
 interface HeaderProps {
   userEmail: string;
@@ -24,6 +24,7 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 const ALL_TABS: { key: NavTab; label: string }[] = [
   { key: 'properties', label: 'Properties' },
   { key: 'financial', label: 'Financial' },
+  { key: 'tour', label: 'Tour Map' },
   { key: 'clients', label: 'Clients' },
   { key: 'brokers', label: 'Brokers' },
   { key: 'team', label: 'Team' },
@@ -38,11 +39,12 @@ export default function Header({
   const menuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
-  // Only admins manage Clients/Brokers. Brokers and clients see Properties +
-  // Financial; brokers switch between their clients via the "Viewing as" dropdown.
+  // Only admins manage Clients/Brokers/Team. Brokers and clients see
+  // Properties, Financial, and Tour Map; brokers switch between their clients
+  // via the "Viewing as" dropdown.
   const visibleTabs = userRole === 'admin'
     ? ALL_TABS
-    : ALL_TABS.filter(t => t.key === 'properties' || t.key === 'financial');
+    : ALL_TABS.filter(t => t.key === 'properties' || t.key === 'financial' || t.key === 'tour');
 
   const canSwitchClient = userRole !== 'client' && clients.length > 0;
 

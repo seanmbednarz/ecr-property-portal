@@ -5,6 +5,7 @@ import { Property, Client, Suite } from '../types';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import PropertyDocuments from './PropertyDocuments';
 import { propertyTypesOf, listingStatusOf, statusColor, isSaleSuite, salePriceOf, suiteTypeLabel, suiteTypeColor } from '../lib/propertyMeta';
 import { supabase } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
@@ -785,6 +786,8 @@ export default function PropertyDetailPage({
             sale
           />
         )}
+
+        <PropertyDocuments propertyId={property.id} isAdmin={isAdmin} />
       </main>
 
       {/* Footer */}

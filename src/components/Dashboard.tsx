@@ -12,6 +12,7 @@ import BrokersPage from './BrokersPage';
 import ClientsPage from './ClientsPage';
 import FinancialAnalysis from './FinancialAnalysis';
 import TeamPage from './TeamPage';
+import TourMapPage from './TourMapPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
@@ -369,6 +370,15 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           clientName={selectedClient?.company || selectedClient?.name || ''}
           clients={clients}
           canManage={isAdmin || isBroker}
+        />
+      )}
+
+      {/* Tour Map tab */}
+      {activeTab === 'tour' && (
+        <TourMapPage
+          properties={clientProperties}
+          clientId={activeClientId}
+          clientName={selectedClient?.company || selectedClient?.name || ''}
         />
       )}
 
