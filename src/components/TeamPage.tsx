@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, RefreshCw, AlertTriangle, UserPlus, Pencil, X, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { UserRole } from '../types';
 
 interface TeamUser {
@@ -36,7 +36,7 @@ async function manageUser(body: Record<string, unknown>): Promise<any> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
   const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-manage-user`,
+    edgeFn('admin-manage-user'),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },

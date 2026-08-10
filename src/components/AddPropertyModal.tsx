@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Upload, MapPin, Plus, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
 import { Property, Client, SuiteListingType } from '../types';
@@ -176,11 +176,13 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
     form.append('bucket', bucket);
     form.append('path', path);
     const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-property-file`,
+      edgeFn('upload-property-file'),
       { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` }, body: form }
     );
-    const json = await res.json();
-    if (!res.ok) throw new Error(`Upload failed for ${file.name}: ${json.error ?? res.statusText}`);
+    // Guarded: a non-JSON body (proxy error, HTML 404) would otherwise surface
+    // as "Unexpected end of JSON input" and hide the real HTTP failure.
+    const json = await res.json().catch(() => ({} as any));
+    if (!res.ok) throw new Error(`Upload failed for ${file.name}: ${json.error ?? `${res.status} ${res.statusText}`}`);
     return json.url as string;
   }
 

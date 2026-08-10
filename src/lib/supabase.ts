@@ -16,8 +16,18 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || SU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Exported for the few places that call an edge function directly rather than
-// through the client — notably sign-in by username, which has no user session
-// yet but still has to satisfy the platform's JWT check.
+// Exported for the many places that call an edge function directly rather than
+// through the client. ALWAYS use these instead of reading
+// import.meta.env.VITE_SUPABASE_URL at the call site: CI builds (Cloudflare
+// Workers Builds) have no .env, so the raw env var is undefined there and the
+// URL silently becomes "undefined/functions/v1/..." — which resolves against
+// the site origin, returns the SPA's HTML, and surfaces as the baffling
+// "Unexpected end of JSON input". These constants fall back to the public
+// values, so they're correct in every build.
 export const SUPABASE_URL_RESOLVED = supabaseUrl;
 export const SUPABASE_ANON_KEY_RESOLVED = supabaseAnonKey;
+
+// Absolute URL for an edge function, e.g. edgeFn('upload-property-file').
+export function edgeFn(name: string): string {
+  return `${supabaseUrl}/functions/v1/${name}`;
+}

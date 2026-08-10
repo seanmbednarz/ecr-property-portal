@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Upload, X, ExternalLink, MapPin } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { mapClientBrokers } from '../lib/clientBrokers';
 import { AddressSuggestion, searchAddresses } from '../lib/geocode';
 import { Broker, Client } from '../types';
@@ -176,7 +176,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-login`,
+            edgeFn('provision-login'),
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },

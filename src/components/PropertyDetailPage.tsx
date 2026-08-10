@@ -7,7 +7,7 @@ import { safeHttpUrl } from '../lib/placeholders';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import PropertyDocuments from './PropertyDocuments';
 import { propertyTypesOf, listingStatusOf, statusColor, isSaleSuite, salePriceOf, suiteTypeLabel, suiteTypeColor } from '../lib/propertyMeta';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
 
 function BrokerAvatar({ name, photoUrl }: { name: string; photoUrl: string | null }) {
@@ -387,15 +387,15 @@ export default function PropertyDetailPage({
       form.append('slug', property.slug);
 
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-brochure`,
+        edgeFn('upload-brochure'),
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: form,
         }
       );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? 'Upload failed');
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(json.error ?? `Upload failed (${res.status} ${res.statusText})`);
       onBrochureUploaded?.(property.id, json.url);
     } catch (err: unknown) {
       setBrochureError(err instanceof Error ? err.message : 'Upload failed');

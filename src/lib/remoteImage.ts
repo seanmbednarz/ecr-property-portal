@@ -1,7 +1,7 @@
-import { supabase } from './supabase';
+import { supabase, edgeFn, SUPABASE_URL_RESOLVED } from './supabase';
 import { resizeImageForUpload } from './resizeImage';
 
-const STORAGE_PREFIX = `${import.meta.env.VITE_SUPABASE_URL}/storage/`;
+const STORAGE_PREFIX = `${SUPABASE_URL_RESOLVED}/storage/`;
 
 // A URL we should "internalize": an absolute http(s) link that isn't already in
 // our own Supabase storage. (Our own storage URLs are left alone.)
@@ -34,7 +34,7 @@ export async function internalizeRemoteUrl(
 
   // 1. Fetch the remote bytes via our proxy (browser can't read cross-origin).
   const proxyRes = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-image`,
+    edgeFn('proxy-image'),
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -58,7 +58,7 @@ export async function internalizeRemoteUrl(
   form.append('bucket', bucket);
   form.append('path', path);
   const upRes = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-property-file`,
+    edgeFn('upload-property-file'),
     { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form },
   );
   const upJson = await upRes.json().catch(() => ({}));

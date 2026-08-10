@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Upload, MapPin, Plus, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { internalizeRemoteUrl, isExternalUrl } from '../lib/remoteImage';
 import { Property, Client, SuiteListingType } from '../types';
@@ -39,10 +39,10 @@ async function uploadFile(bucket: string, path: string, file: File): Promise<str
   form.append('bucket', bucket);
   form.append('path', path);
   const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-property-file`,
+    edgeFn('upload-property-file'),
     { method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}` }, body: form }
   );
-  const json = await res.json();
+  const json = await res.json().catch(() => ({} as any));
   if (!res.ok) throw new Error(`Upload failed for ${file.name}: ${json.error ?? res.statusText}`);
   return json.url as string;
 }

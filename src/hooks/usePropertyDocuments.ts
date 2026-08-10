@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 
 // Documents attached to a property (PDF, Word, Excel, CSV, images). Mirrors
 // usePropertyPhotos: same storage-path + display_order shape, same edge-function
@@ -41,7 +41,7 @@ async function uploadViaEdge(file: File, path: string, accessToken: string): Pro
   form.append('bucket', BUCKET);
   form.append('path', path);
   const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-property-file`,
+    edgeFn('upload-property-file'),
     { method: 'POST', headers: { Authorization: `Bearer ${accessToken}` }, body: form },
   );
   if (!res.ok) {

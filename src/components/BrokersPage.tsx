@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Plus, Edit2, Trash2, Upload, Phone, Mail, Users, X } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, edgeFn } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { Broker, Client } from '../types';
 
@@ -68,11 +68,11 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         form.append('file', uploadPhoto);
         form.append('path', path);
         const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-broker-photo`,
+          edgeFn('upload-broker-photo'),
           { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` }, body: form }
         );
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? 'Photo upload failed');
+        const json = await res.json().catch(() => ({} as any));
+        if (!res.ok) throw new Error(json.error ?? `Photo upload failed (${res.status} ${res.statusText})`);
         finalPhotoUrl = json.url;
       }
 
@@ -102,7 +102,7 @@ function BrokerModal({ broker, onClose, onSaved, onDelete }: BrokerModalProps) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/provision-login`,
+            edgeFn('provision-login'),
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
