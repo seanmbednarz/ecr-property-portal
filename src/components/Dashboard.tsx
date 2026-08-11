@@ -379,6 +379,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           properties={clientProperties}
           clientId={activeClientId}
           clientName={selectedClient?.company || selectedClient?.name || ''}
+          client={selectedClient}
           canEdit={isAdmin || isBroker}
         />
       )}

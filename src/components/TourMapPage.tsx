@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Plus, X, GripVertical, Printer, MapPin, Clock, AlertTriangle, Check, Loader2 } from 'lucide-react';
-import { Property } from '../types';
+import { Plus, X, GripVertical, Printer, MapPin, Clock, AlertTriangle, Check, Loader2, Calendar, FileDown } from 'lucide-react';
+import { Property, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatAddress } from '../lib/geocode';
+import ECRLogoBlock from '../assets/ecr-logo-block.png';
 
 // Survey & tour builder: pick the properties to visit, put them in order, give
 // each a time, and see the walking route. The stop list comes first and the map
@@ -18,43 +19,66 @@ export interface TourStop {
   time: string; // 'HH:MM' 24h, kept sortable; rendered as 12h
 }
 
-// 8:00 AM through 5:00 PM on the half hour.
-function buildTimeSlots(): string[] {
-  const slots: string[] = [];
-  for (let h = 8; h <= 17; h++) {
-    slots.push(`${String(h).padStart(2, '0')}:00`);
-    if (h !== 17) slots.push(`${String(h).padStart(2, '0')}:30`);
-  }
-  return slots;
-}
-const TIME_SLOTS = buildTimeSlots();
+const DAY_START = '09:00';
+const DAY_END = '17:00';
 
 export function formatTime(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
+  if (!isFinite(h) || !isFinite(m)) return hhmm;
   const period = h >= 12 ? 'PM' : 'AM';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-// Default the next stop to 30 minutes after the last one, capped at the end of
-// the working day.
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (isFinite(h) ? h : 9) * 60 + (isFinite(m) ? m : 0);
+}
+
+function fromMinutes(total: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, total));
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+}
+
+// Default the next stop to 30 minutes after the last one — a starting point the
+// broker then nudges to the real time (tours rarely land on the half hour).
 function nextSlotAfter(stops: TourStop[]): string {
-  if (stops.length === 0) return TIME_SLOTS[0];
-  const last = stops[stops.length - 1].time;
-  const idx = TIME_SLOTS.indexOf(last);
-  if (idx < 0 || idx >= TIME_SLOTS.length - 1) return TIME_SLOTS[TIME_SLOTS.length - 1];
-  return TIME_SLOTS[idx + 1];
+  if (stops.length === 0) return DAY_START;
+  const next = toMinutes(stops[stops.length - 1].time) + 30;
+  return fromMinutes(Math.min(next, toMinutes(DAY_END)));
+}
+
+// A tour is usually planned for an upcoming day; default to tomorrow.
+function defaultTourDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function formatTourDate(iso: string | null): string {
+  if (!iso) return '';
+  // Parse as local, not UTC — 'new Date("2026-08-12")' is midnight UTC and can
+  // render as the previous day west of Greenwich.
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
 }
 
 interface TourMapPageProps {
   properties: Property[];   // already filtered to the active client
   clientId: string | null;
   clientName: string;
+  client: Client | null;    // logo + broker team for the package cover
   canEdit: boolean;         // admins and brokers build the itinerary; clients read it
 }
 
-export default function TourMapPage({ properties, clientId, clientName, canEdit }: TourMapPageProps) {
+export default function TourMapPage({ properties, clientId, clientName, client, canEdit }: TourMapPageProps) {
+  const [packageState, setPackageState] = useState<'idle' | 'building'>('idle');
+  const [packageNote, setPackageNote] = useState<string | null>(null);
   const [stops, setStops] = useState<TourStop[]>([]);
+  const [tourDate, setTourDate] = useState<string>(defaultTourDate());
   const [showAdd, setShowAdd] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -109,7 +133,7 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
       }
       const { data, error } = await supabase
         .from('client_tours')
-        .select('stops')
+        .select('stops, tour_date')
         .eq('client_id', clientId)
         .maybeSingle();
       if (cancelled) return;
@@ -118,6 +142,7 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
         setStops([]);
       } else {
         setStops(Array.isArray(data?.stops) ? (data!.stops as TourStop[]) : []);
+        setTourDate(data?.tour_date ?? defaultTourDate());
       }
       loadedFor.current = clientId;
       setLoading(false);
@@ -136,7 +161,7 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
       const { error } = await supabase
         .from('client_tours')
         .upsert(
-          { client_id: clientId, stops, updated_by: user?.id ?? null },
+          { client_id: clientId, stops, tour_date: tourDate || null, updated_by: user?.id ?? null },
           { onConflict: 'client_id' },
         );
       if (error) {
@@ -148,7 +173,7 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
       }
     }, 600);
     return () => clearTimeout(handle);
-  }, [stops, clientId, canEdit]);
+  }, [stops, tourDate, clientId, canEdit]);
 
   useEffect(() => {
     if (!showAdd) return;
@@ -303,6 +328,49 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
     setStops([]);
   }
 
+  async function handleTourPackage() {
+    setPackageState('building');
+    setPackageNote(null);
+    try {
+      let mapImage = '';
+      try {
+        mapImage = mapRef.current?.getCanvas().toDataURL('image/png') ?? '';
+      } catch {
+        mapImage = '';
+      }
+      const { buildTourPackage } = await import('../lib/tourPackage');
+      const result = await buildTourPackage({
+        clientName,
+        clientLogoUrl: client?.logo_url ?? null,
+        ecrLogoUrl: ECRLogoBlock,
+        tourDate,
+        tourDateLabel: formatTourDate(tourDate),
+        stops: resolved.map(r => ({ property: r.property!, time: r.stop.time })),
+        brokers: client?.brokers ?? [],
+        mapImageDataUrl: mapImage,
+        formatTime,
+      });
+
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Say plainly which flyers didn't make it — better the broker finds out
+      // here than the client finds out mid-tour.
+      const notes: string[] = [`${result.flyersIncluded.length} flyer${result.flyersIncluded.length === 1 ? '' : 's'} included`];
+      if (result.flyersMissing.length) notes.push(`no flyer on file for ${result.flyersMissing.join(', ')}`);
+      if (result.flyersFailed.length) notes.push(`couldn't merge the flyer for ${result.flyersFailed.join(', ')}`);
+      setPackageNote(notes.join(' · '));
+    } catch (e: any) {
+      setPackageNote(`Couldn't build the package: ${e?.message ?? 'unknown error'}`);
+    } finally {
+      setPackageState('idle');
+    }
+  }
+
   function handlePrint() {
     // Snapshot the live map so the printed itinerary carries the route with it.
     let mapImage = '';
@@ -311,7 +379,7 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
     } catch {
       mapImage = '';
     }
-    renderPrintView(clientName, resolved.map(r => ({ property: r.property!, time: r.stop.time })), mapImage);
+    renderPrintView(clientName, tourDate, resolved.map(r => ({ property: r.property!, time: r.stop.time })), mapImage);
     window.print();
   }
 
@@ -328,6 +396,12 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
                 ? 'Build the tour itinerary, set times, and see the walking route.'
                 : 'Your tour itinerary and walking route.'}
             </p>
+            {packageNote && (
+              <p className="text-xs mt-1.5 px-2 py-1 rounded inline-block"
+                style={{ color: '#3a4a47', backgroundColor: '#f5f2ec', border: '1px solid #e5e1d8' }}>
+                {packageNote}
+              </p>
+            )}
             {canEdit && clientId && saveState !== 'idle' && (
               <p className="text-xs mt-1 flex items-center gap-1.5"
                 style={{ color: saveState === 'error' ? '#d41f27' : '#9aaba8' }}>
@@ -339,13 +413,26 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {resolved.length > 0 && (
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide"
-                style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
-              >
-                <Printer className="w-3.5 h-3.5" /> Save as PDF
-              </button>
+              <>
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wide"
+                  style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
+                >
+                  <Printer className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Schedule</span> PDF
+                </button>
+                <button
+                  onClick={handleTourPackage}
+                  disabled={packageState === 'building'}
+                  title="Cover page, schedule, map, and every flyer in tour order — one PDF"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wide text-white disabled:opacity-60"
+                  style={{ backgroundColor: '#2a3330' }}
+                >
+                  {packageState === 'building'
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Building…</>
+                    : <><FileDown className="w-3.5 h-3.5" /> Tour Package</>}
+                </button>
+              </>
             )}
             {canEdit && clientId && (
             <div className="relative" ref={addRef}>
@@ -413,10 +500,27 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#7a8a87' }}>
-                Itinerary · {resolved.length} {resolved.length === 1 ? 'stop' : 'stops'}
-              </p>
+            <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#7a8a87' }}>
+                  Itinerary · {resolved.length} {resolved.length === 1 ? 'stop' : 'stops'}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" style={{ color: '#9aaba8' }} />
+                  {canEdit ? (
+                    <input
+                      type="date"
+                      value={tourDate}
+                      onChange={e => setTourDate(e.target.value)}
+                      aria-label="Tour date"
+                      className="rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
+                      style={{ backgroundColor: 'white', border: '1px solid #e5e1d8', color: '#3a4a47' }}
+                    />
+                  ) : (
+                    <span className="text-xs font-semibold" style={{ color: '#3a4a47' }}>{formatTourDate(tourDate)}</span>
+                  )}
+                </div>
+              </div>
               {canEdit && <button onClick={clearAll} className="text-xs font-semibold" style={{ color: '#9aaba8' }}>Clear all</button>}
             </div>
 
@@ -455,14 +559,17 @@ export default function TourMapPage({ properties, clientId, clientName, canEdit 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <Clock className="w-3.5 h-3.5" style={{ color: '#9aaba8' }} />
                       {canEdit ? (
-                        <select
+                        // Free time entry rather than fixed slots — tours start
+                        // at 9:05 or 9:10 as often as on the half hour.
+                        <input
+                          type="time"
                           value={r.stop.time}
                           onChange={e => setTime(p.id, e.target.value)}
+                          step={300}
+                          aria-label={`Time for ${p.name}`}
                           className="rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none cursor-pointer"
                           style={{ backgroundColor: '#f5f2ec', border: '1px solid #e5e1d8', color: '#3a4a47' }}
-                        >
-                          {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-                        </select>
+                        />
                       ) : (
                         <span className="text-xs font-semibold" style={{ color: '#3a4a47' }}>{formatTime(r.stop.time)}</span>
                       )}
@@ -513,6 +620,7 @@ function escapeHtml(s: string): string {
 // index.css), so this node is what lands in the PDF.
 function renderPrintView(
   clientName: string,
+  tourDate: string,
   stops: { property: Property; time: string }[],
   mapImage: string,
 ) {
@@ -538,6 +646,7 @@ function renderPrintView(
         <div>
           <div style="font-size:18px;font-weight:800;text-transform:uppercase;letter-spacing:.06em">Survey &amp; Tour Itinerary</div>
           ${clientName ? `<div style="font-size:12px;color:#7a8a87;margin-top:2px">${escapeHtml(clientName)}</div>` : ''}
+          ${tourDate ? `<div style="font-size:12px;color:#3a4a47;font-weight:700;margin-top:2px">${escapeHtml(formatTourDate(tourDate))}</div>` : ''}
         </div>
         <div style="font-size:11px;color:#7a8a87">${stops.length} stop${stops.length === 1 ? '' : 's'}</div>
       </div>
