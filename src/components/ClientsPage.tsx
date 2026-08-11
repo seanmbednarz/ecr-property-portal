@@ -5,6 +5,11 @@ import { mapClientBrokers } from '../lib/clientBrokers';
 import { AddressSuggestion, searchAddresses } from '../lib/geocode';
 import { Broker, Client } from '../types';
 
+// Client logins are usernames, but Supabase Auth is email-based underneath.
+// Addresses are synthesised on this domain and never receive mail — the
+// username is what the client actually types.
+const CLIENT_LOGIN_DOMAIN = 'clients.ecrtx.com';
+
 interface ClientsPageProps {
   brokers: Broker[];
   properties: { id: string; client_id: string | null; client_ids?: string[] }[];
@@ -25,6 +30,10 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [name, setName] = useState(client?.name ?? '');
   const [company, setCompany] = useState(client?.company ?? '');
   const [email, setEmail] = useState(client?.email ?? '');
+  // Client teams share one login, so it's a username rather than an inbox
+  // address. Supabase Auth is still email+password underneath — the address is
+  // synthesised from the username and never used to receive mail.
+  const [username, setUsername] = useState('');
   // Write-only: used to set/reset the login via provision-login, never
   // stored or displayed. Blank on edit = leave the existing login unchanged.
   const [password, setPassword] = useState('');
@@ -41,6 +50,19 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [geoLoading, setGeoLoading] = useState(false);
   const geoDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geoWrapperRef = useRef<HTMLDivElement>(null);
+  // Existing login username for this client, if one was provisioned.
+  useEffect(() => {
+    if (!client?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc('admin_list_users');
+      if (cancelled || !data) return;
+      const row = (data as any[]).find(u => u.client_id === client.id && u.username);
+      if (row) setUsername(row.username);
+    })();
+    return () => { cancelled = true; };
+  }, [client?.id]);
+
   const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(
     new Set(client?.brokers?.map(b => b.id) ?? [])
   );
@@ -172,7 +194,12 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
       // Provision (or reset) the client's login only when a password was
       // entered; blank leaves any existing login untouched.
       const newPassword = password.trim();
-      if (payload.email && newPassword) {
+      const cleanUsername = username.trim();
+      if (cleanUsername && newPassword) {
+        // Supabase Auth requires an email, but the client signs in with the
+        // username. Derive a stable address on a domain we own that never
+        // receives mail; the username is what's actually typed at sign-in.
+        const loginEmail = `${cleanUsername.toLowerCase()}@${CLIENT_LOGIN_DOMAIN}`;
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           const res = await fetch(
@@ -180,12 +207,21 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-              body: JSON.stringify({ email: payload.email, password: newPassword, role: 'client', client_id: savedClient.id }),
+              body: JSON.stringify({ email: loginEmail, password: newPassword, role: 'client', client_id: savedClient.id }),
             }
           );
           if (!res.ok) {
             const j = await res.json().catch(() => ({}));
             throw new Error(`Client saved, but login setup failed: ${j.error ?? res.statusText}`);
+          }
+          // Attach the username so it can be used to sign in.
+          const { data: users } = await supabase.rpc('admin_list_users');
+          const created = (users as any[] | null)?.find(u => u.email === loginEmail);
+          if (created) {
+            const { error: unErr } = await supabase.rpc('admin_set_username', {
+              target_id: created.id, new_username: cleanUsername,
+            });
+            if (unErr) throw new Error(`Login created, but the username couldn't be set: ${unErr.message}`);
           }
         }
       }
@@ -231,17 +267,28 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
             </div>
           </div>
 
-          {/* Email + Password */}
+          {/* Contact email — informational only, not the login */}
+          <div>
+            <label className={lbl} style={lblStyle}>Contact Email</label>
+            <input type="email" className={inp} style={inpStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="jordan@example.com" {...focus} />
+          </div>
+
+          {/* Login — username, shared across the client's team */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={lbl} style={lblStyle}>Email (login)</label>
-              <input type="email" className={inp} style={inpStyle} value={email} onChange={e => setEmail(e.target.value)} placeholder="jordan@example.com" {...focus} />
+              <label className={lbl} style={lblStyle}>Username (login)</label>
+              <input className={inp} style={inpStyle} value={username} onChange={e => setUsername(e.target.value)}
+                placeholder="e.g. acmeteam" autoComplete="off" {...focus} />
             </div>
             <div>
               <label className={lbl} style={lblStyle}>Set Login Password</label>
               <input className={inp} style={inpStyle} value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit ? 'Leave blank to keep current' : 'Min 6 characters'} autoComplete="new-password" {...focus} />
             </div>
           </div>
+          <p className="text-xs -mt-1" style={{ color: '#9aaba8' }}>
+            The client's team signs in with this username — no inbox needed, so it can be shared.
+            Enter both a username and a password to create or reset the login.
+          </p>
 
           {/* Website */}
           <div>
@@ -419,8 +466,26 @@ export default function ClientsPage({ brokers, properties, onClientsChange, canM
   const [loading, setLoading] = useState(true);
   const [modalClient, setModalClient] = useState<Partial<Client> | null | false>(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // client_id -> login username, so the list can show the actual login rather
+  // than the contact email (they're different things now).
+  const [usernames, setUsernames] = useState<Record<string, string>>({});
 
   useEffect(() => { fetchClients(); }, []);
+
+  useEffect(() => {
+    if (!canManage) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc('admin_list_users');
+      if (cancelled || !data) return;
+      const map: Record<string, string> = {};
+      (data as any[]).forEach(u => {
+        if (u.client_id && u.username) map[u.client_id] = u.username;
+      });
+      setUsernames(map);
+    })();
+    return () => { cancelled = true; };
+  }, [canManage]);
 
   async function fetchClients() {
     const { data } = await supabase
@@ -514,7 +579,9 @@ export default function ClientsPage({ brokers, properties, onClientsChange, canM
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs" style={{ color: '#3a4a47' }}>{c.email ?? '—'}</span>
+                      {usernames[c.id]
+                        ? <span className="text-xs font-semibold" style={{ color: '#1a4f8a' }}>@{usernames[c.id]}</span>
+                        : <span className="text-xs" style={{ color: '#9aaba8' }}>No login</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 flex-wrap">
