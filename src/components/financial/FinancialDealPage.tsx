@@ -58,8 +58,8 @@ export default function FinancialDealPage({ deal, selectedStage, canManage, onBa
           <ArrowLeft className="w-3.5 h-3.5" /> Back to comparison
         </button>
 
-        <div className="rounded-2xl p-5 mb-5" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
-          <h1 className="text-2xl font-extrabold uppercase leading-tight" style={{ color: '#37423f' }}>{deal.name}</h1>
+        <div className="rounded-2xl p-4 sm:p-5 mb-5" style={{ backgroundColor: "white", border: "1px solid #dedad3" }}>
+          <h1 className="text-lg sm:text-2xl font-extrabold uppercase leading-tight break-words" style={{ color: '#37423f' }}>{deal.name}</h1>
           <p className="text-sm mt-1" style={{ color: '#6f7b76' }}>
             {[deal.building, deal.address].filter(Boolean).join(' · ') || '—'}
           </p>
@@ -121,6 +121,7 @@ function OptionBlock({ deal, option, selectedStageIndex, canManage, onSelectStag
         )}
       </div>
 
+      <p className="lg:hidden text-xs mb-2" style={{ color: "#9aaba8" }}>Swipe sideways to see every stage</p>
       <div className="rounded-2xl overflow-hidden mb-3" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
         <div className="overflow-x-auto">
           <table className="w-full" style={{ borderCollapse: 'collapse' }}>

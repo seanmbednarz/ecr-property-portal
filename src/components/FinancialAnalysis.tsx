@@ -198,10 +198,10 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
     <div className="flex-1 overflow-y-auto" style={{ backgroundColor: '#f0ede8' }}>
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#889893' }}>Financial Analysis</p>
-            <h1 className="text-2xl font-extrabold uppercase leading-tight" style={{ color: '#37423f' }}>
+            <h1 className="text-lg sm:text-2xl font-extrabold uppercase leading-tight break-words" style={{ color: '#37423f' }}>
               Deal Comparison{clientName ? ` — ${clientName}` : ''}
             </h1>
             <p className="text-sm mt-1" style={{ color: '#6f7b76' }}>
@@ -211,11 +211,11 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap sm:justify-end">
             {rows.length > 0 && (
               <button onClick={() => setPrinting(true)} className={ghostBtn}
                 style={ghostStyle} title="Export a branded PDF of this comparison">
-                <Printer className="w-3.5 h-3.5" /> Export PDF
+                <Printer className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export </span>PDF
               </button>
             )}
             {workbook && (
@@ -281,7 +281,12 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
           <EmptyState canManage={canManage} />
         ) : (
           <>
-            {/* Comparison table */}
+            {/* Comparison table. Deliberately stays a table on phones: the
+                point is reading one metric across deals, which cards break.
+                The metric column is sticky so the row label never scrolls off. */}
+            <p className="lg:hidden text-xs mb-2 flex items-center gap-1" style={{ color: '#9aaba8' }}>
+              <ChevronRight className="w-3 h-3" /> Swipe the table sideways to compare deals
+            </p>
             <div className="rounded-2xl overflow-hidden mb-5" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
               <div className="overflow-x-auto">
                 <table className="w-full" style={{ borderCollapse: 'collapse' }}>
