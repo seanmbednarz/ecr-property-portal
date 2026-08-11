@@ -328,13 +328,71 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
     setStops([]);
   }
 
+  // The live map's pins are HTML markers layered OVER the WebGL canvas, so a
+  // plain getCanvas().toDataURL() captures the basemap and route but no pins.
+  // Re-project each stop to screen space and draw the numbered pins onto a copy
+  // of the canvas, after fitting the view to the whole tour.
+  async function captureMapWithPins(): Promise<string> {
+    const map = mapRef.current;
+    if (!map) return '';
+
+    if (mappable.length > 0) {
+      const coords = mappable.map(r => [r.property!.lng as number, r.property!.lat as number] as [number, number]);
+      const bounds = coords.reduce(
+        (acc, c) => acc.extend(c),
+        new maplibregl.LngLatBounds(coords[0], coords[0]),
+      );
+      map.fitBounds(bounds, { padding: 90, maxZoom: 15.5, duration: 0 });
+      // Wait for tiles/labels to settle, but never hang the export on it.
+      await Promise.race([
+        new Promise<void>(resolve => map.once('idle', () => resolve())),
+        new Promise<void>(resolve => setTimeout(resolve, 4000)),
+      ]);
+    }
+
+    const src = map.getCanvas();
+    const out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    const ctx = out.getContext('2d');
+    if (!ctx) return src.toDataURL('image/png');
+    ctx.drawImage(src, 0, 0);
+
+    // canvas.width is CSS pixels × devicePixelRatio; map.project() returns CSS
+    // pixels, so scale to match or the pins land in the wrong place on retina.
+    const dpr = src.clientWidth ? src.width / src.clientWidth : 1;
+
+    mappable.forEach((r, i) => {
+      const pt = map.project([r.property!.lng as number, r.property!.lat as number]);
+      const x = pt.x * dpr;
+      const y = pt.y * dpr;
+      const radius = 15 * dpr;
+
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#2a3330';
+      ctx.fill();
+      ctx.lineWidth = 2.5 * dpr;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${14 * dpr}px Montserrat, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, y);
+    });
+
+    return out.toDataURL('image/png');
+  }
+
   async function handleTourPackage() {
     setPackageState('building');
     setPackageNote(null);
     try {
       let mapImage = '';
       try {
-        mapImage = mapRef.current?.getCanvas().toDataURL('image/png') ?? '';
+        mapImage = await captureMapWithPins();
       } catch {
         mapImage = '';
       }

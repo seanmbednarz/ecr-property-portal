@@ -710,7 +710,21 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             onMouseLeave={e => { e.currentTarget.style.color = '#889893'; }}>ecrtx.com</a>
         </p>
         <div className="flex-1" />
-        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Beyond Real Estate.</p>
+        <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Built on Relationships.</p>
+      </footer>
+
+      {/* Compact footer for phones — contact details only, no logos or broker
+          cards, so it stays a couple of lines above the bottom tab bar. */}
+      <footer className="md:hidden shrink-0 px-4 py-3 text-center" style={{ backgroundColor: '#2a3330', borderTop: '1px solid rgba(136,152,147,0.15)' }}>
+        <p className="text-[11px] leading-relaxed" style={{ color: '#b5c5c1' }}>
+          ECR // 114 W 7th St // Suite 1000 // Austin, TX 78701
+        </p>
+        <p className="text-[11px] leading-relaxed">
+          <a href="tel:5125050000" style={{ color: '#889893' }}>512.505.0000</a>
+          <span style={{ color: '#889893' }}> // </span>
+          <a href="https://ecrtx.com" target="_blank" rel="noopener noreferrer" style={{ color: '#889893' }}>ecrtx.com</a>
+        </p>
+        <p className="text-[10px] font-bold uppercase tracking-widest mt-1" style={{ color: '#d41f27' }}>Built on Relationships.</p>
       </footer>
 
       {/* Mounted only while exporting a PDF; prints itself once photos load */}

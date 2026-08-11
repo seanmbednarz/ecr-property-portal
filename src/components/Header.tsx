@@ -96,22 +96,22 @@ export default function Header({
         {/* ECR Logo */}
         <img src={ECRLogo} alt="ECR" className="h-7 w-auto shrink-0" />
 
-        {/* Client brand — logo for any role; the name only for client-role
-            users, since admins/brokers already see it in "Viewing as" (showing
-            it on both sides is redundant and crowds the bar). */}
+        {/* Client brand. The LOGO shows at every width — on a phone it's the
+            main signal of whose portal you're in, since the "Viewing as"
+            control is tucked in the menu. The client NAME stays desktop-only
+            for admins/brokers, who'd otherwise see it twice. */}
         {(selectedClient?.logo_url || (userRole === 'client' && selectedClient?.company)) && (
           <>
-            <div className="hidden lg:block h-7 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.25)' }} />
+            <div className="h-7 w-px shrink-0" style={{ backgroundColor: 'rgba(136,152,147,0.25)' }} />
             {selectedClient?.logo_url ? (
               <img
                 src={selectedClient.logo_url}
                 alt={selectedClient.company}
-                className="hidden lg:block h-6 w-auto shrink-0 object-contain"
-                style={{ maxWidth: 80 }}
+                className="h-6 w-auto shrink-0 object-contain max-w-[64px] lg:max-w-[80px]"
                 onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
-              <span className="text-xs font-bold uppercase tracking-widest hidden lg:block whitespace-nowrap" style={{ color: 'white' }}>
+              <span className="text-xs font-bold uppercase tracking-widest truncate max-w-[120px] lg:max-w-none" style={{ color: 'white' }}>
                 {selectedClient?.company}
               </span>
             )}

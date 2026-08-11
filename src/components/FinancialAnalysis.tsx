@@ -284,10 +284,9 @@ export default function FinancialAnalysis({ clientId, clientName, clients, canMa
             {/* Comparison table. Deliberately stays a table on phones: the
                 point is reading one metric across deals, which cards break.
                 The metric column is sticky so the row label never scrolls off. */}
-            <p className="lg:hidden text-xs mb-2 flex items-center gap-1" style={{ color: '#9aaba8' }}>
-              <ChevronRight className="w-3 h-3" /> Swipe the table sideways to compare deals
-            </p>
-            <div className="rounded-2xl overflow-hidden mb-5" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
+            <MobileComparison rows={rows} groups={groups} display={display} npvRate={npvRate}
+              onOpenDeal={id => setOpenDealId(id)} />
+            <div className="hidden lg:block rounded-2xl overflow-hidden mb-5" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
               <div className="overflow-x-auto">
                 <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                   <thead>
@@ -419,6 +418,82 @@ export interface CompRow {
 }
 
 // ---------------------------------------------------------------------------
+// Which deal wins this metric, or -1 when there's no meaningful winner.
+// Shared so the desktop table and the mobile cards can never disagree.
+function bestIndexFor(def: MetricDef, rows: CompRow[]): number {
+  if (!def.best || !def.num) return -1;
+  const nums = rows.map(c => {
+    const n = def.num!(c);
+    return n == null || !isFinite(n) ? NaN : n;
+  });
+  const valid = nums.filter(n => !isNaN(n));
+  if (valid.length <= 1) return -1;
+  const target = def.best === 'max' ? Math.max(...valid) : Math.min(...valid);
+  return nums.indexOf(target);
+}
+
+// Phone view of the comparison. The desktop table is metrics-down /
+// deals-across, which needs horizontal scrolling on a phone and made it hard
+// to use. Here it's inverted: one card per deal with its metrics stacked, so
+// everything reads top-to-bottom. The winning value on each metric still gets
+// the green ▼, which is what carries the comparison across cards.
+function MobileComparison({ rows, groups, display, npvRate, onOpenDeal }: {
+  rows: CompRow[];
+  groups: MetricDef['group'][];
+  display: DisplaySettings;
+  npvRate: number;
+  onOpenDeal: (id: string) => void;
+}) {
+  return (
+    <div className="lg:hidden flex flex-col gap-4 mb-5">
+      {rows.map((row, dealIdx) => (
+        <div key={row.key} className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}>
+          <button onClick={() => onOpenDeal(row.deal.id)} className="w-full text-left px-4 py-3"
+            style={{ backgroundColor: '#2a3330' }}>
+            <span className="text-sm font-extrabold uppercase text-white flex items-center gap-1">
+              {row.title} <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+            </span>
+            <span className="block text-xs mt-0.5" style={{ color: '#b5c5c1' }}>
+              {row.deal.building || row.deal.address || '—'}
+            </span>
+            <span className="block text-xs" style={{ color: '#889893' }}>{row.m.stage.label}</span>
+          </button>
+
+          {groups.map(g => {
+            if (display.sections[g] === false) return null;
+            const visible = METRICS.filter(mm => mm.group === g && display.metrics[mm.key]);
+            if (visible.length === 0) return null;
+            return (
+              <div key={g}>
+                <div className="px-4 py-1.5 text-xs font-bold uppercase tracking-widest"
+                  style={{ backgroundColor: '#e7ecea', color: '#37423f' }}>{GROUP_LABELS[g]}</div>
+                {visible.map(def => {
+                  const isBest = bestIndexFor(def, rows) === dealIdx;
+                  return (
+                    <div key={def.key} className="flex items-start justify-between gap-3 px-4 py-2"
+                      style={{ borderBottom: '1px solid #f0ede8', backgroundColor: def.emphasize ? '#f5f2ec' : 'white' }}>
+                      <span className="text-xs" style={{ color: def.emphasize ? '#37423f' : '#6f7b76' }}>
+                        {labelOf(def, npvRate)}
+                      </span>
+                      <span className="text-sm tabular-nums text-right shrink-0"
+                        style={{
+                          fontWeight: def.emphasize || isBest ? 700 : 500,
+                          color: isBest ? '#2e7d4f' : '#1e2624',
+                        }}>
+                        {def.text(row)}{isBest && ' ▼'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MetricGroup({ label, defs, rows, npvRate }: {
   label: string;
   defs: MetricDef[];
@@ -434,18 +509,7 @@ function MetricGroup({ label, defs, rows, npvRate }: {
         </td>
       </tr>
       {defs.map(def => {
-        let bestIdx = -1;
-        if (def.best && def.num) {
-          const nums = rows.map(c => {
-            const n = def.num!(c);
-            return n == null || !isFinite(n) ? NaN : n;
-          });
-          const valid = nums.filter(n => !isNaN(n));
-          if (valid.length > 1) {
-            const target = def.best === 'max' ? Math.max(...valid) : Math.min(...valid);
-            bestIdx = nums.indexOf(target);
-          }
-        }
+        const bestIdx = bestIndexFor(def, rows);
         return (
           <tr key={def.key}>
             <td className="px-4 py-2.5 text-xs font-semibold sticky left-0 z-10"

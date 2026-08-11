@@ -1,6 +1,15 @@
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import { Property, Broker } from '../types';
 import { formatAddress } from './geocode';
+import { isSaleSuite, salePriceOf } from './propertyMeta';
+
+// Optional cover photo. Resolved with import.meta.glob rather than a direct
+// import so the build still succeeds when the file isn't there — drop an image
+// at src/assets/tour-cover.(jpg|jpeg|png) and it appears on the next build.
+const coverPhotoModules = import.meta.glob('../assets/tour-cover.{jpg,jpeg,png}', {
+  eager: true, query: '?url', import: 'default',
+});
+const COVER_PHOTO_URL = (Object.values(coverPhotoModules)[0] as string | undefined) ?? null;
 
 // Assembles the full tour package as a single PDF: cover, schedule, map with a
 // numbered legend, then each property's flyer in tour order.
@@ -18,6 +27,7 @@ const INK = rgb(30 / 255, 38 / 255, 36 / 255);
 const MUTED = rgb(122 / 255, 138 / 255, 135 / 255);
 const RULE = rgb(229 / 255, 225 / 255, 216 / 255);
 const BAND = rgb(245 / 255, 242 / 255, 236 / 255);
+const DARK = rgb(42 / 255, 51 / 255, 48 / 255);
 
 export interface TourPackageStop {
   property: Property;
@@ -92,8 +102,8 @@ function drawFooter(page: PDFPage, font: PDFFont) {
   page.drawText('ECR // 114 W 7th St // Suite 1000 // Austin, TX 78701 // ecrtx.com', {
     x: MARGIN, y: 28, size: 7.5, font, color: MUTED,
   });
-  page.drawText('BEYOND REAL ESTATE.', {
-    x: LETTER[0] - MARGIN - font.widthOfTextAtSize('BEYOND REAL ESTATE.', 7.5),
+  page.drawText('BUILT ON RELATIONSHIPS.', {
+    x: LETTER[0] - MARGIN - font.widthOfTextAtSize('BUILT ON RELATIONSHIPS.', 7.5),
     y: 28, size: 7.5, font, color: ECR_RED,
   });
 }
@@ -112,28 +122,61 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
     const page = pdf.addPage(LETTER);
     const { width, height } = page.getSize();
 
+    const BAND_H = 96;
+    const PHOTO_H = 268;
+
+    // Photo first, then the band and logos paint over it — drawing in z-order
+    // avoids re-drawing the logos to cover photo overflow.
+    let photoBottom = height - BAND_H;
+    if (COVER_PHOTO_URL) {
+      const photoBytes = await imageToPngBytes(COVER_PHOTO_URL);
+      if (photoBytes) {
+        try {
+          const photo = await pdf.embedPng(photoBytes);
+          const yPos = height - BAND_H - PHOTO_H;
+          // Cover-fit: fill the width and let the excess height run under the
+          // band above and the white mask below.
+          const drawW = width;
+          const drawH = (photo.height / photo.width) * drawW;
+          page.drawImage(photo, {
+            x: 0, y: yPos - (drawH - PHOTO_H) / 2, width: drawW, height: drawH,
+          });
+          // Mask whatever spills below the intended band.
+          page.drawRectangle({ x: 0, y: 0, width, height: yPos, color: rgb(1, 1, 1) });
+          photoBottom = yPos;
+        } catch {
+          // Unsupported image — the cover still works without it.
+        }
+      }
+    }
+
+    // Dark header band. Client logos are usually light (they're made for the
+    // app's dark header), so on white they'd wash out — the band gives them
+    // the background they were designed for.
+    page.drawRectangle({ x: 0, y: height - BAND_H, width, height: BAND_H, color: DARK });
+
     const ecrBytes = await imageToPngBytes(input.ecrLogoUrl);
     if (ecrBytes) {
       const logo = await pdf.embedPng(ecrBytes);
-      const w = 120;
+      const w = 104;
       const h = (logo.height / logo.width) * w;
-      page.drawImage(logo, { x: MARGIN, y: height - MARGIN - h, width: w, height: h });
+      page.drawImage(logo, { x: MARGIN, y: height - BAND_H / 2 - h / 2, width: w, height: h });
     }
 
     if (input.clientLogoUrl) {
       const clientBytes = await imageToPngBytes(input.clientLogoUrl);
       if (clientBytes) {
         const logo = await pdf.embedPng(clientBytes);
-        const maxW = 130;
-        const maxH = 60;
-        const scale = Math.min(maxW / logo.width, maxH / logo.height);
+        const scale = Math.min(130 / logo.width, 54 / logo.height);
         const w = logo.width * scale;
         const h = logo.height * scale;
-        page.drawImage(logo, { x: width - MARGIN - w, y: height - MARGIN - h, width: w, height: h });
+        page.drawImage(logo, {
+          x: width - MARGIN - w, y: height - BAND_H / 2 - h / 2, width: w, height: h,
+        });
       }
     }
 
-    let y = height / 2 + 90;
+    let y = photoBottom - 86;
     page.drawRectangle({ x: MARGIN, y: y + 46, width: 64, height: 4, color: ECR_RED });
 
     page.drawText('PROPERTY TOUR', { x: MARGIN, y, size: 34, font: bold, color: INK });
@@ -189,52 +232,107 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
   }
 
   // ── 2. Schedule ───────────────────────────────────────────────────────────
+  // A card per stop rather than one thin row: the useful detail (size,
+  // submarket, and every quoted suite) doesn't fit a single line, and the
+  // broker is reading this standing in a lobby.
   {
     let page = pdf.addPage(LETTER);
     const { width, height } = page.getSize();
     let y = height - MARGIN;
 
-    page.drawText('TOUR SCHEDULE', { x: MARGIN, y, size: 16, font: bold, color: INK });
-    y -= 6;
-    page.drawLine({ start: { x: MARGIN, y: y - 6 }, end: { x: width - MARGIN, y: y - 6 }, thickness: 2, color: ECR_RED });
-    y -= 14;
-    if (input.tourDateLabel) {
-      page.drawText(input.tourDateLabel, { x: MARGIN, y: y - 8, size: 10, font, color: MUTED });
-      y -= 22;
-    }
-    y -= 12;
+    const newPage = () => {
+      drawFooter(page, font);
+      page = pdf.addPage(LETTER);
+      y = height - MARGIN;
+    };
 
-    const colX = { num: MARGIN, time: MARGIN + 30, name: MARGIN + 100, market: width - MARGIN - 96 };
-    page.drawText('#', { x: colX.num, y, size: 8, font: bold, color: MUTED });
-    page.drawText('TIME', { x: colX.time, y, size: 8, font: bold, color: MUTED });
-    page.drawText('PROPERTY', { x: colX.name, y, size: 8, font: bold, color: MUTED });
-    page.drawText('SUBMARKET', { x: colX.market, y, size: 8, font: bold, color: MUTED });
-    y -= 8;
-    page.drawLine({ start: { x: MARGIN, y }, end: { x: width - MARGIN, y }, thickness: 0.75, color: RULE });
+    page.drawText('TOUR SCHEDULE', { x: MARGIN, y, size: 16, font: bold, color: INK });
+    page.drawLine({ start: { x: MARGIN, y: y - 12 }, end: { x: width - MARGIN, y: y - 12 }, thickness: 2, color: ECR_RED });
+    y -= 22;
+    if (input.tourDateLabel) {
+      page.drawText(input.tourDateLabel, { x: MARGIN, y, size: 10, font, color: MUTED });
+      y -= 10;
+    }
     y -= 20;
 
+    const innerW = width - MARGIN * 2;
+
     input.stops.forEach((s, i) => {
-      // New page when we'd otherwise run into the footer.
-      if (y < 80) {
-        drawFooter(page, font);
-        page = pdf.addPage(LETTER);
-        y = height - MARGIN;
+      const suites = s.property.suites ?? [];
+      // Header + meta + suite header + rows, or a single "no suites" line.
+      const cardH = 52 + (suites.length ? 16 + suites.length * 14 : 12) + 12;
+      if (y - cardH < 70) newPage();
+
+      const top = y;
+      page.drawRectangle({ x: MARGIN, y: top - cardH, width: innerW, height: cardH, color: BAND });
+      page.drawRectangle({ x: MARGIN, y: top - cardH, width: 3, height: cardH, color: ECR_RED });
+
+      // Stop badge + time
+      page.drawCircle({ x: MARGIN + 22, y: top - 18, size: 11, color: DARK });
+      const numTxt = String(i + 1);
+      page.drawText(numTxt, {
+        x: MARGIN + 22 - bold.widthOfTextAtSize(numTxt, 10) / 2, y: top - 21.5,
+        size: 10, font: bold, color: rgb(1, 1, 1),
+      });
+      page.drawText(input.formatTime(s.time), {
+        x: MARGIN + 40, y: top - 22, size: 12, font: bold, color: ECR_RED,
+      });
+      page.drawText(truncate(s.property.name, bold, 12, innerW - 150), {
+        x: MARGIN + 108, y: top - 22, size: 12, font: bold, color: INK,
+      });
+
+      // Address + key facts
+      page.drawText(truncate(formatAddress(s.property.address), font, 8.5, innerW - 120), {
+        x: MARGIN + 40, y: top - 35, size: 8.5, font, color: MUTED,
+      });
+      const facts = [
+        s.property.market ? `Submarket: ${s.property.market}` : null,
+        s.property.total_sf != null ? `${s.property.total_sf.toLocaleString()} SF` : null,
+        s.property.year_built ? `Built ${s.property.year_built}` : null,
+        s.property.parking_ratio ? `Parking ${s.property.parking_ratio}` : null,
+      ].filter(Boolean).join('   ·   ');
+      if (facts) {
+        page.drawText(truncate(facts, font, 8, innerW - 60), {
+          x: MARGIN + 40, y: top - 46, size: 8, font, color: INK,
+        });
       }
-      if (i % 2 === 0) {
-        page.drawRectangle({ x: MARGIN - 6, y: y - 12, width: width - MARGIN * 2 + 12, height: 30, color: BAND });
+
+      // Suite table
+      let sy = top - 62;
+      if (suites.length === 0) {
+        page.drawText('No suites listed', { x: MARGIN + 40, y: sy, size: 8, font, color: MUTED });
+      } else {
+        const cols = { suite: MARGIN + 40, sf: MARGIN + 150, rate: MARGIN + 220, avail: MARGIN + 330 };
+        page.drawText('SUITE', { x: cols.suite, y: sy, size: 6.5, font: bold, color: MUTED });
+        page.drawText('SF', { x: cols.sf, y: sy, size: 6.5, font: bold, color: MUTED });
+        page.drawText('RATE', { x: cols.rate, y: sy, size: 6.5, font: bold, color: MUTED });
+        page.drawText('AVAILABLE', { x: cols.avail, y: sy, size: 6.5, font: bold, color: MUTED });
+        sy -= 4;
+        page.drawLine({
+          start: { x: MARGIN + 40, y: sy }, end: { x: width - MARGIN - 12, y: sy },
+          thickness: 0.5, color: RULE,
+        });
+        sy -= 11;
+
+        suites.forEach(su => {
+          const sale = isSaleSuite(su);
+          const rate = sale
+            ? (salePriceOf(su) != null ? `$${Math.round(salePriceOf(su)!).toLocaleString()}` : '—')
+            : (su.base_rent != null ? `$${Number(su.base_rent).toFixed(2)}/SF` : '—');
+          const label = su.listing_type && su.listing_type !== 'lease'
+            ? `${su.suite_name ?? '—'} (${su.listing_type})`
+            : (su.suite_name ?? '—');
+          page.drawText(truncate(label, font, 8, 104), { x: cols.suite, y: sy, size: 8, font, color: INK });
+          page.drawText(su.sf != null ? su.sf.toLocaleString() : '—', { x: cols.sf, y: sy, size: 8, font, color: INK });
+          page.drawText(rate, { x: cols.rate, y: sy, size: 8, font, color: INK });
+          page.drawText(truncate(su.available ?? '—', font, 8, innerW - 300), {
+            x: cols.avail, y: sy, size: 8, font, color: su.available === 'Available Now' ? ECR_RED : MUTED,
+          });
+          sy -= 14;
+        });
       }
-      page.drawText(String(i + 1), { x: colX.num, y, size: 10, font: bold, color: ECR_RED });
-      page.drawText(input.formatTime(s.time), { x: colX.time, y, size: 10, font: bold, color: INK });
-      page.drawText(truncate(s.property.name, bold, 10.5, colX.market - colX.name - 12), {
-        x: colX.name, y, size: 10.5, font: bold, color: INK,
-      });
-      page.drawText(truncate(formatAddress(s.property.address), font, 8, colX.market - colX.name - 12), {
-        x: colX.name, y: y - 11, size: 8, font, color: MUTED,
-      });
-      page.drawText(truncate(s.property.market ?? '', font, 8.5, 92), {
-        x: colX.market, y, size: 8.5, font, color: MUTED,
-      });
-      y -= 30;
+
+      y = top - cardH - 10;
     });
 
     drawFooter(page, font);

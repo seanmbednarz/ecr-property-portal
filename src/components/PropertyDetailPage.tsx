@@ -809,9 +809,16 @@ export default function PropertyDetailPage({
               ))}
             </div>
           )}
-          <div className="flex items-center justify-between pt-1" style={{ borderTop: '1px solid rgba(136,152,147,0.15)' }}>
-            <img src={ECRLogo} alt="ECR" className="h-6 w-auto" />
-            <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Beyond Real Estate.</p>
+          <div className="pt-2 text-center" style={{ borderTop: '1px solid rgba(136,152,147,0.15)' }}>
+            <p className="text-[11px] leading-relaxed" style={{ color: '#b5c5c1' }}>
+              ECR // 114 W 7th St // Suite 1000 // Austin, TX 78701
+            </p>
+            <p className="text-[11px] leading-relaxed">
+              <a href="tel:5125050000" style={{ color: '#889893' }}>512.505.0000</a>
+              <span style={{ color: '#889893' }}> // </span>
+              <a href="https://ecrtx.com" target="_blank" rel="noopener noreferrer" style={{ color: '#889893' }}>ecrtx.com</a>
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-widest mt-1" style={{ color: '#d41f27' }}>Built on Relationships.</p>
           </div>
         </div>
 
@@ -851,7 +858,7 @@ export default function PropertyDetailPage({
               onMouseLeave={e => { e.currentTarget.style.color = '#889893'; }}>ecrtx.com</a>
           </p>
           <div className="flex-1" />
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Beyond Real Estate.</p>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#d41f27' }}>Built on Relationships.</p>
         </div>
       </footer>
 
