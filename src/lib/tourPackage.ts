@@ -118,34 +118,35 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
   const flyersFailed: string[] = [];
 
   // ── 1. Cover ──────────────────────────────────────────────────────────────
+  // Layout, top to bottom: dark logo band, title block, full-bleed photo band,
+  // broker credits, footer.
   {
     const page = pdf.addPage(LETTER);
     const { width, height } = page.getSize();
 
-    const BAND_H = 96;
-    const PHOTO_H = 268;
+    const BAND_H = 96;          // dark header
+    const PHOTO_Y = 183;        // bottom edge of the photo band
+    const PHOTO_H = 311;        // its height
 
-    // Photo first, then the band and logos paint over it — drawing in z-order
-    // avoids re-drawing the logos to cover photo overflow.
-    let photoBottom = height - BAND_H;
+    // Photo first so the masks and text land on top of it.
     if (COVER_PHOTO_URL) {
       const photoBytes = await imageToPngBytes(COVER_PHOTO_URL);
       if (photoBytes) {
         try {
           const photo = await pdf.embedPng(photoBytes);
-          const yPos = height - BAND_H - PHOTO_H;
-          // Cover-fit: fill the width and let the excess height run under the
-          // band above and the white mask below.
+          // Cover-fit: fill the page width, centre the crop vertically.
           const drawW = width;
           const drawH = (photo.height / photo.width) * drawW;
-          page.drawImage(photo, {
-            x: 0, y: yPos - (drawH - PHOTO_H) / 2, width: drawW, height: drawH,
-          });
-          // Mask whatever spills below the intended band.
-          page.drawRectangle({ x: 0, y: 0, width, height: yPos, color: rgb(1, 1, 1) });
-          photoBottom = yPos;
+          const overflow = Math.max(0, (drawH - PHOTO_H) / 2);
+          page.drawImage(photo, { x: 0, y: PHOTO_Y - overflow, width: drawW, height: drawH });
+          // Trim the crop back to the band. pdf-lib has no clipping path, so
+          // the overflow is masked with the page's own white.
+          if (overflow > 0) {
+            page.drawRectangle({ x: 0, y: PHOTO_Y + PHOTO_H, width, height: overflow + 2, color: rgb(1, 1, 1) });
+            page.drawRectangle({ x: 0, y: PHOTO_Y - overflow - 2, width, height: overflow + 2, color: rgb(1, 1, 1) });
+          }
         } catch {
-          // Unsupported image — the cover still works without it.
+          // Unsupported image — the cover still reads fine without it.
         }
       }
     }
@@ -176,11 +177,12 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
       }
     }
 
-    let y = photoBottom - 86;
+    // Title block, between the band and the photo.
+    let y = 620;
     page.drawRectangle({ x: MARGIN, y: y + 46, width: 64, height: 4, color: ECR_RED });
 
     page.drawText('PROPERTY TOUR', { x: MARGIN, y, size: 34, font: bold, color: INK });
-    y -= 30;
+    y -= 34;
 
     if (input.clientName) {
       page.drawText(truncate(input.clientName, font, 18, width - MARGIN * 2), {
