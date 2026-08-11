@@ -182,8 +182,11 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
       .from('clients')
       .select(`*, brokers:client_brokers(is_lead, broker:brokers(*))`)
       .order('created_at');
-    // Brokers only see clients assigned to them
-    if (isBroker && profile?.broker_id) {
+    // Brokers only see clients assigned to them. A broker profile with no
+    // broker_id has no assignments at all — return nothing rather than falling
+    // through to the unfiltered query, which would list every client.
+    if (isBroker) {
+      if (!profile?.broker_id) { setClients([]); return; }
       const { data: cbRows } = await supabase
         .from('client_brokers')
         .select('client_id')
@@ -244,21 +247,45 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const editRawProperty = (p: Property) => setEditProperty(properties.find(x => x.id === p.id) ?? p);
   const footerBrokers = selectedClient?.brokers ?? [];
 
-  const propertyTypes = ['All', ...Array.from(new Set(properties.flatMap(p => propertyTypesOf(p))))];
 
-  // Everything assigned to the client currently being viewed — deliberately
-  // NOT the on-screen `filtered` list, so a search or type filter can't
-  // quietly drop properties out of an exported client report. Suite-level
-  // client visibility still applies.
+  // The client ids a broker is allowed to see. `clients` is already scoped to
+  // their assignments by fetchClients, so this is just its ids. null = admin,
+  // i.e. no restriction. Without this, a broker sitting on "All Clients" — the
+  // default — saw every property in the portal.
+  const brokerScopeIds = useMemo(
+    () => (isBroker ? clients.map(c => c.id) : null),
+    [isBroker, clients],
+  );
+
+  // Does this property belong to whoever is being viewed right now?
+  const inScope = useMemo(() => (p: { client_ids?: string[] | null; client_id?: string | null }) => {
+    if (activeClientId) return (p.client_ids ?? []).includes(activeClientId);
+    if (brokerScopeIds) return (p.client_ids ?? []).some(id => brokerScopeIds.includes(id));
+    return true;   // admin viewing All Clients
+  }, [activeClientId, brokerScopeIds]);
+
+  // Type-filter chips reflect what this viewer can actually see.
+  const propertyTypes = ['All', ...Array.from(new Set(properties.filter(inScope).flatMap(p => propertyTypesOf(p))))];
+
+  // Brokers working a single client shouldn't have to pick it every session.
+  useEffect(() => {
+    if (!isBroker || selectedClientId) return;
+    if (clients.length === 1) setSelectedClientId(clients[0].id);
+  }, [isBroker, clients, selectedClientId]);
+
+  // Everything assigned to whoever is being viewed — deliberately NOT the
+  // on-screen `filtered` list, so a search or type filter can't quietly drop
+  // properties out of an exported client report. Suite-level client visibility
+  // still applies.
   const clientProperties = useMemo(() => properties
-    .filter(p => !activeClientId || (p.client_ids ?? []).includes(activeClientId))
+    .filter(inScope)
     .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
     .sort((a, b) => a.name.localeCompare(b.name)),
-    [properties, activeClientId]);
+    [properties, activeClientId, inScope]);
 
   const filtered = useMemo(() => properties
     .filter(p => {
-      if (activeClientId && !(p.client_ids ?? []).includes(activeClientId)) return false;
+      if (!inScope(p)) return false;
       if (showFavoritesOnly && !favorites.has(p.id)) return false;
       if (typeFilter !== 'All' && !propertyTypesOf(p).includes(typeFilter)) return false;
       if (searchQuery) {
@@ -293,7 +320,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
       if (sortKey === 'lng_desc') return (b.lng ?? -180) - (a.lng ?? -180);
       if (sortKey === 'lng_asc') return (a.lng ?? -180) - (b.lng ?? -180);
       return 0;
-    }), [properties, activeClientId, showFavoritesOnly, favorites, typeFilter, searchQuery, sortKey]);
+    }), [properties, activeClientId, inScope, showFavoritesOnly, favorites, typeFilter, searchQuery, sortKey]);
 
   if (detailProperty) {
     return (
@@ -431,7 +458,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
           </div>
 
           <span className="hidden sm:block text-xs tabular-nums shrink-0" style={{ color: '#9aaba8' }}>
-            Showing <span style={{ color: '#3a4a47' }}>{filtered.length}</span> / {properties.length}
+            Showing <span style={{ color: '#3a4a47' }}>{filtered.length}</span> / {clientProperties.length}
           </span>
 
           {/* Map / List view toggle — desktop only */}
