@@ -1,13 +1,16 @@
 -- Broker display order, as specified by ECR marketing (2026-08-11).
 --
--- This is the brokerage roster only — not the full team page on ecrtx.com,
--- which also lists property management, construction, accounting, marketing
--- and engineering staff. Matt Levin (Founder/CEO) is deliberately not in the
--- broker ordering either.
+-- Brokerage roster only — not the full ecrtx.com team page, which also lists
+-- property management, construction, accounting, marketing and engineering
+-- staff. Matt Levin (Founder/CEO) is deliberately not in the broker ordering.
 --
--- Matched on name rather than id so it applies cleanly to whichever brokers
--- the table actually holds. Anyone not on the list is pushed past 900 and
--- sorts to the end rather than being silently interleaved.
+-- Matching note: several brokers carry their designations in the name column
+-- ("Jason Steinberg, SIOR", "Patrick Ley, SIOR CCIM"), so comparison is on the
+-- part before the first comma. An exact-name match silently skipped those
+-- three and left gaps at the top of the order.
+--
+-- Written as a single assignment so it's idempotent: every broker either gets
+-- their rank or 900, no matter how many times it runs.
 
 WITH broker_order(full_name, ord) AS (
   VALUES
@@ -28,15 +31,10 @@ WITH broker_order(full_name, ord) AS (
     ('Stephen McMillen', 15)
 )
 UPDATE brokers b
-SET display_order = o.ord
-FROM broker_order o
-WHERE lower(btrim(b.name)) = lower(o.full_name);
-
-UPDATE brokers
-SET display_order = 900 + display_order
-WHERE display_order < 900
-  AND lower(btrim(name)) NOT IN (
-    'jason steinberg','patrick ley','haley smith','ryan wilson','matt fain',
-    'david dawkins','stephen pannes','sean couey','isaac gutierrez','nick owens',
-    'hannah huskey','ross chumley','cory camp','charles herst','stephen mcmillen'
-  );
+SET display_order = COALESCE(
+  (
+    SELECT o.ord FROM broker_order o
+    WHERE lower(btrim(split_part(b.name, ',', 1))) = lower(o.full_name)
+  ),
+  900   -- not on the brokerage list; sorts to the end
+);
