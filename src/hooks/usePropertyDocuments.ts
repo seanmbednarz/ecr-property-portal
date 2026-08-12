@@ -27,8 +27,20 @@ export const DOCUMENT_EXTENSIONS = [
 
 export const MAX_DOCUMENT_BYTES = 26214400; // 25 MB, matches the bucket limit
 
-function publicUrl(path: string): string {
-  return supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+// The bucket is private (migration 36), so links are signed and short-lived
+// rather than permanent public URLs. Signed in one batch per page load; an
+// hour comfortably outlives a visit to a property page.
+const SIGNED_URL_TTL = 3600;
+
+async function signedUrls(paths: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (paths.length === 0) return out;
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, SIGNED_URL_TTL);
+  if (error || !data) return out;
+  data.forEach(row => {
+    if (row.path && row.signedUrl) out.set(row.path, row.signedUrl);
+  });
+  return out;
 }
 
 function extensionOf(name: string): string {
@@ -65,15 +77,19 @@ export function usePropertyDocuments(propertyId: string) {
       .order('display_order', { ascending: true });
 
     if (!err && data) {
+      const rows = data as any[];
+      const urls = await signedUrls(rows.map(r => r.storage_path));
       setDocuments(
-        (data as any[]).map(r => ({
+        rows.map(r => ({
           id: r.id,
           storage_path: r.storage_path,
           file_name: r.file_name,
           mime_type: r.mime_type,
           size_bytes: r.size_bytes,
           display_order: r.display_order,
-          url: publicUrl(r.storage_path),
+          // Empty when signing failed — the card renders without a working
+          // link rather than silently pointing at a dead URL.
+          url: urls.get(r.storage_path) ?? '',
         })),
       );
     }
@@ -96,7 +112,7 @@ export function usePropertyDocuments(propertyId: string) {
       const accessToken = session?.access_token ?? '';
       const userId = session?.user?.id ?? null;
 
-      const added: StoredDocument[] = [];
+      const added: string[] = [];
       const rejected: string[] = [];
 
       for (let i = 0; i < files.length; i++) {
@@ -137,25 +153,19 @@ export function usePropertyDocuments(propertyId: string) {
           .single();
 
         if (!insErr && data) {
-          added.push({
-            id: data.id,
-            storage_path: data.storage_path,
-            file_name: data.file_name,
-            mime_type: data.mime_type,
-            size_bytes: data.size_bytes,
-            display_order: data.display_order,
-            url: publicUrl(path),
-          });
+          added.push(data.id);
         } else if (insErr) {
           rejected.push(`${file.name} (${insErr.message})`);
         }
       }
 
-      setDocuments(prev => [...prev, ...added]);
+      // Refetch rather than appending locally: signed URLs have to come from
+      // the storage API, so the list is rebuilt with valid links.
+      if (added.length > 0) await fetchDocuments();
       setError(rejected.length ? `Couldn't add ${rejected.join(', ')}` : null);
       setUploading(false);
     },
-    [propertyId, documents],
+    [propertyId, documents, fetchDocuments],
   );
 
   const remove = useCallback(

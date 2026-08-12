@@ -96,19 +96,32 @@ export default function PropertyDocuments({ propertyId, isAdmin = false }: {
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <a
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download={doc.file_name}
-                          title={`Download ${doc.file_name}`}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-                          style={{ color: '#7a8a87' }}
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f0ede8'; e.currentTarget.style.color = '#3a4a47'; }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#7a8a87'; }}
-                        >
-                          <Download className="w-4 h-4" />
-                        </a>
+                        {/* Links are signed per page load; if signing failed the
+                            url is empty, and an empty href would just reload the
+                            page. Show it as unavailable instead. */}
+                        {doc.url ? (
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            download={doc.file_name}
+                            title={`Download ${doc.file_name}`}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                            style={{ color: '#7a8a87' }}
+                            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f0ede8'; e.currentTarget.style.color = '#3a4a47'; }}
+                            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#7a8a87'; }}
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
+                        ) : (
+                          <span
+                            title="This link couldn't be prepared — reload the page to try again"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center"
+                            style={{ color: '#c8c3b8' }}
+                          >
+                            <Download className="w-4 h-4" />
+                          </span>
+                        )}
                         {isAdmin && (
                           <button
                             onClick={() => setConfirmDelete(doc.id)}
