@@ -1,5 +1,5 @@
 import { PDFDocument, PDFFont, PDFPage, StandardFonts, rgb } from 'pdf-lib';
-import { Property, Broker } from '../types';
+import { Property, Broker, Suite } from '../types';
 import { formatAddress } from './geocode';
 import { isSaleSuite, salePriceOf } from './propertyMeta';
 
@@ -32,6 +32,9 @@ const DARK = rgb(42 / 255, 51 / 255, 48 / 255);
 export interface TourPackageStop {
   property: Property;
   time: string;
+  // The suites the broker chose for this stop. Passed in rather than read off
+  // the property so the package prints the selection, not everything on file.
+  suites: Suite[];
 }
 
 export interface TourPackageInput {
@@ -260,7 +263,7 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
     const innerW = width - MARGIN * 2;
 
     input.stops.forEach((s, i) => {
-      const suites = s.property.suites ?? [];
+      const suites = s.suites;
       // Header + meta + suite header + rows, or a single "no suites" line.
       const cardH = 52 + (suites.length ? 16 + suites.length * 14 : 12) + 12;
       if (y - cardH < 70) newPage();

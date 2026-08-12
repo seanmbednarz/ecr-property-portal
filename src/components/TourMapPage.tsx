@@ -17,6 +17,17 @@ const AUSTIN_CENTER: [number, number] = [-97.743057, 30.267153];
 export interface TourStop {
   propertyId: string;
   time: string; // 'HH:MM' 24h, kept sortable; rendered as 12h
+  // Suites to carry into the tour package. Undefined means "all of them",
+  // which is how every tour saved before this existed — so those keep working
+  // unchanged. An explicit [] means the broker deselected everything.
+  suiteIds?: string[];
+}
+
+// The suites a stop should show: the explicit selection, or all of them.
+export function suitesForStop(property: Property, stop: TourStop) {
+  const all = property.suites ?? [];
+  if (!stop.suiteIds) return all;
+  return all.filter(su => stop.suiteIds!.includes(su.id));
 }
 
 const DAY_START = '09:00';
@@ -81,6 +92,7 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
   const [tourDate, setTourDate] = useState<string>(defaultTourDate());
   const [showAdd, setShowAdd] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [openSuites, setOpenSuites] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -309,6 +321,24 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
     setStops(prev => [...prev, { propertyId, time: nextSlotAfter(prev) }]);
     setShowAdd(false);
   }
+  function toggleSuite(propertyId: string, suiteId: string, allIds: string[]) {
+    setStops(prev => prev.map(st => {
+      if (st.propertyId !== propertyId) return st;
+      // First edit on a stop that never had a selection starts from "all".
+      const current = st.suiteIds ?? allIds;
+      const next = current.includes(suiteId)
+        ? current.filter(id => id !== suiteId)
+        : [...current, suiteId];
+      return { ...st, suiteIds: next };
+    }));
+  }
+
+  function setAllSuites(propertyId: string, allIds: string[], on: boolean) {
+    setStops(prev => prev.map(st => (
+      st.propertyId === propertyId ? { ...st, suiteIds: on ? allIds : [] } : st
+    )));
+  }
+
   function removeStop(propertyId: string) {
     setStops(prev => prev.filter(s => s.propertyId !== propertyId));
   }
@@ -403,7 +433,11 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
         ecrLogoUrl: ECRLogoBlock,
         tourDate,
         tourDateLabel: formatTourDate(tourDate),
-        stops: resolved.map(r => ({ property: r.property!, time: r.stop.time })),
+        stops: resolved.map(r => ({
+          property: r.property!,
+          time: r.stop.time,
+          suites: suitesForStop(r.property!, r.stop),
+        })),
         brokers: client?.brokers ?? [],
         mapImageDataUrl: mapImage,
         formatTime,
@@ -586,6 +620,11 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
               {resolved.map((r, i) => {
                 const p = r.property!;
                 const noCoords = p.lat == null || p.lng == null;
+                const allSuites = p.suites ?? [];
+                const allSuiteIds = allSuites.map(su => su.id);
+                const chosen = suitesForStop(p, r.stop);
+                const allChosen = chosen.length === allSuites.length;
+                const expanded = openSuites === p.id;
                 return (
                   <div
                     key={p.id}
@@ -594,7 +633,6 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
                     onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
                     onDragOver={e => { if (canEdit) { e.preventDefault(); setOverIndex(i); } }}
                     onDrop={e => { if (!canEdit) return; e.preventDefault(); if (dragIndex !== null) move(dragIndex, i); setDragIndex(null); setOverIndex(null); }}
-                    className="flex items-center gap-3 px-4 py-3"
                     style={{
                       borderTop: i === 0 ? 'none' : '1px solid #f0ede8',
                       backgroundColor: overIndex === i && dragIndex !== null && dragIndex !== i ? '#f7f5f1' : 'white',
@@ -602,12 +640,33 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
                       cursor: canEdit ? 'grab' : 'default',
                     }}
                   >
+                  <div className="flex items-center gap-3 px-4 py-3">
                     {canEdit && <GripVertical className="w-4 h-4 shrink-0" style={{ color: '#c8c3b8' }} />}
                     <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
                       style={{ backgroundColor: '#2a3330' }}>{i + 1}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold truncate" style={{ color: '#1e2624' }}>{p.name}</p>
                       <p className="text-xs truncate" style={{ color: '#9aaba8' }}>{formatAddress(p.address)}</p>
+                      {allSuites.length > 0 && (
+                        canEdit ? (
+                          <button
+                            onClick={e => { e.stopPropagation(); setOpenSuites(expanded ? null : p.id); }}
+                            className="text-xs mt-0.5 font-semibold"
+                            style={{ color: chosen.length === 0 ? '#d41f27' : '#1a4f8a' }}
+                          >
+                            {chosen.length === 0
+                              ? 'No suites selected'
+                              : allChosen
+                                ? `All ${allSuites.length} suite${allSuites.length === 1 ? '' : 's'}`
+                                : `${chosen.length} of ${allSuites.length} suites`}
+                            {expanded ? ' ▴' : ' ▾'}
+                          </button>
+                        ) : (
+                          <p className="text-xs mt-0.5" style={{ color: '#9aaba8' }}>
+                            {chosen.length} suite{chosen.length === 1 ? '' : 's'}
+                          </p>
+                        )
+                      )}
                       {noCoords && (
                         <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: '#b8860b' }}>
                           <AlertTriangle className="w-3 h-3" /> No map location on file
@@ -645,6 +704,37 @@ export default function TourMapPage({ properties, clientId, clientName, client, 
                       <X className="w-3.5 h-3.5" />
                     </button>
                     )}
+                  </div>
+
+                  {canEdit && expanded && allSuites.length > 0 && (
+                    <div className="px-4 pb-3 pl-14" style={{ backgroundColor: '#faf9f6' }}>
+                      <div className="flex items-center gap-3 mb-1.5">
+                        <button onClick={() => setAllSuites(p.id, allSuiteIds, true)}
+                          className="text-xs font-semibold" style={{ color: '#1a4f8a' }}>Select all</button>
+                        <button onClick={() => setAllSuites(p.id, allSuiteIds, false)}
+                          className="text-xs font-semibold" style={{ color: '#9aaba8' }}>Clear</button>
+                      </div>
+                      {allSuites.map(su => {
+                        const on = chosen.some(c => c.id === su.id);
+                        return (
+                          <label key={su.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleSuite(p.id, su.id, allSuiteIds)}
+                              style={{ accentColor: '#d41f27' }}
+                            />
+                            <span className="text-xs" style={{ color: on ? '#1e2624' : '#9aaba8' }}>
+                              <span className="font-semibold">{su.suite_name || 'Suite'}</span>
+                              {su.sf != null && ` · ${su.sf.toLocaleString()} SF`}
+                              {su.base_rent != null && ` · $${Number(su.base_rent).toFixed(2)}/SF`}
+                              {su.available && ` · ${su.available}`}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                   </div>
                 );
               })}
