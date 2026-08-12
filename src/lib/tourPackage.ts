@@ -265,7 +265,7 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
     input.stops.forEach((s, i) => {
       const suites = s.suites;
       // Header + meta + suite header + rows, or a single "no suites" line.
-      const cardH = 52 + (suites.length ? 16 + suites.length * 14 : 12) + 12;
+      const cardH = 52 + (suites.length ? 16 + suites.length * 13 : 12) + 12;
       if (y - cardH < 70) newPage();
 
       const top = y;
@@ -294,7 +294,7 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
         s.property.market ? `Submarket: ${s.property.market}` : null,
         s.property.total_sf != null ? `${s.property.total_sf.toLocaleString()} SF` : null,
         s.property.year_built ? `Built ${s.property.year_built}` : null,
-        s.property.parking_ratio ? `Parking ${s.property.parking_ratio}` : null,
+        s.property.parking_ratio ? `Parking ratio: ${s.property.parking_ratio}` : null,
       ].filter(Boolean).join('   ·   ');
       if (facts) {
         page.drawText(truncate(facts, font, 8, innerW - 60), {
@@ -307,11 +307,24 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
       if (suites.length === 0) {
         page.drawText('No suites listed', { x: MARGIN + 40, y: sy, size: 8, font, color: MUTED });
       } else {
-        const cols = { suite: MARGIN + 40, sf: MARGIN + 150, rate: MARGIN + 220, avail: MARGIN + 330 };
-        page.drawText('SUITE', { x: cols.suite, y: sy, size: 6.5, font: bold, color: MUTED });
-        page.drawText('SF', { x: cols.sf, y: sy, size: 6.5, font: bold, color: MUTED });
-        page.drawText('RATE', { x: cols.rate, y: sy, size: 6.5, font: bold, color: MUTED });
-        page.drawText('AVAILABLE', { x: cols.avail, y: sy, size: 6.5, font: bold, color: MUTED });
+        // Seven columns across ~464pt, so this runs at 7.5pt. Sale suites reuse
+        // the Base/Full-svc slots for Price/SF and total price and leave the
+        // lease-only columns blank rather than printing misleading zeros.
+        const cols = {
+          suite:   MARGIN + 40,
+          sf:      MARGIN + 128,
+          base:    MARGIN + 180,
+          opex:    MARGIN + 238,
+          full:    MARGIN + 296,
+          monthly: MARGIN + 354,
+          avail:   MARGIN + 422,
+        };
+        const heads: [number, string][] = [
+          [cols.suite, 'SUITE'], [cols.sf, 'SF'], [cols.base, 'BASE $/SF'],
+          [cols.opex, 'OPEX $/SF'], [cols.full, 'FULL SVC'],
+          [cols.monthly, 'MONTHLY'], [cols.avail, 'AVAILABLE'],
+        ];
+        heads.forEach(([x, label]) => page.drawText(label, { x, y: sy, size: 6, font: bold, color: MUTED }));
         sy -= 4;
         page.drawLine({
           start: { x: MARGIN + 40, y: sy }, end: { x: width - MARGIN - 12, y: sy },
@@ -321,19 +334,42 @@ export async function buildTourPackage(input: TourPackageInput): Promise<TourPac
 
         suites.forEach(su => {
           const sale = isSaleSuite(su);
-          const rate = sale
-            ? (salePriceOf(su) != null ? `$${Math.round(salePriceOf(su)!).toLocaleString()}` : '—')
-            : (su.base_rent != null ? `$${Number(su.base_rent).toFixed(2)}/SF` : '—');
+          // Same derivation as the property detail page: full service is base +
+          // op. exp. unless quoted directly, and monthly is the annual over 12.
+          const fullSvc = su.full_svc ?? (su.base_rent != null && su.op_exp != null ? su.base_rent + su.op_exp : null);
+          const annual = su.monthly_rent ?? (fullSvc != null && su.sf != null ? fullSvc * su.sf : null);
+          const monthly = annual != null ? annual / 12 : null;
+
           const label = su.listing_type && su.listing_type !== 'lease'
             ? `${su.suite_name ?? '—'} (${su.listing_type})`
             : (su.suite_name ?? '—');
-          page.drawText(truncate(label, font, 8, 104), { x: cols.suite, y: sy, size: 8, font, color: INK });
-          page.drawText(su.sf != null ? su.sf.toLocaleString() : '—', { x: cols.sf, y: sy, size: 8, font, color: INK });
-          page.drawText(rate, { x: cols.rate, y: sy, size: 8, font, color: INK });
-          page.drawText(truncate(su.available ?? '—', font, 8, innerW - 300), {
-            x: cols.avail, y: sy, size: 8, font, color: su.available === 'Available Now' ? ECR_RED : MUTED,
+
+          page.drawText(truncate(label, font, 7.5, 84), { x: cols.suite, y: sy, size: 7.5, font, color: INK });
+          page.drawText(su.sf != null ? su.sf.toLocaleString() : '—', { x: cols.sf, y: sy, size: 7.5, font, color: INK });
+
+          if (sale) {
+            page.drawText(su.base_rent != null ? `$${Number(su.base_rent).toFixed(2)}` : '—',
+              { x: cols.base, y: sy, size: 7.5, font, color: INK });
+            page.drawText('—', { x: cols.opex, y: sy, size: 7.5, font, color: MUTED });
+            const price = salePriceOf(su);
+            page.drawText(price != null ? `$${Math.round(price).toLocaleString()}` : '—',
+              { x: cols.full, y: sy, size: 7.5, font: bold, color: INK });
+            page.drawText('—', { x: cols.monthly, y: sy, size: 7.5, font, color: MUTED });
+          } else {
+            page.drawText(su.base_rent != null ? `$${Number(su.base_rent).toFixed(2)}` : '—',
+              { x: cols.base, y: sy, size: 7.5, font, color: INK });
+            page.drawText(su.op_exp != null ? `$${Number(su.op_exp).toFixed(2)}` : '—',
+              { x: cols.opex, y: sy, size: 7.5, font, color: INK });
+            page.drawText(fullSvc != null ? `$${fullSvc.toFixed(2)}` : '—',
+              { x: cols.full, y: sy, size: 7.5, font, color: INK });
+            page.drawText(monthly != null ? `$${Math.round(monthly).toLocaleString()}` : '—',
+              { x: cols.monthly, y: sy, size: 7.5, font: bold, color: INK });
+          }
+
+          page.drawText(truncate(su.available ?? '—', font, 7.5, 78), {
+            x: cols.avail, y: sy, size: 7.5, font, color: su.available === 'Available Now' ? ECR_RED : MUTED,
           });
-          sy -= 14;
+          sy -= 13;
         });
       }
 
