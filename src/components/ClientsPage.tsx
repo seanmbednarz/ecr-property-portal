@@ -117,7 +117,7 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
       } finally {
         setGeoLoading(false);
       }
-    }, 350);
+    }, 600);
     return () => { if (geoDebounceRef.current) clearTimeout(geoDebounceRef.current); };
   }, [officeAddress]);
 

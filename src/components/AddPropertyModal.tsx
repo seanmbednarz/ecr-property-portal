@@ -142,7 +142,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   function handleAddressChange(value: string) {
     setAddress(value);
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
-    addressDebounceRef.current = setTimeout(() => searchAddresses(value), 350);
+    addressDebounceRef.current = setTimeout(() => searchAddresses(value), 600);
   }
 
   function selectSuggestion(s: AddressSuggestion) {

@@ -25,6 +25,13 @@ interface NominatimResult {
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const HEADERS = { 'User-Agent': 'ECR-Property-Portal/1.0' };
 
+// Every ECR property is in Texas, so results are hard-bounded to the state.
+// Without this the search returned same-named streets from anywhere in the US,
+// and — because only results carrying a house number survive formatSuggestion —
+// a nationwide result set often left nothing to show at all.
+// Order is left,top,right,bottom (lon/lat).
+const TEXAS_VIEWBOX = '-106.65,36.50,-93.51,25.84';
+
 function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
   const a = r.address;
   // Only offer real street addresses (house number + road). Anything else
@@ -41,9 +48,17 @@ function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
 }
 
 export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
-  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1&countrycodes=us&layer=address&dedupe=1`;
+  // limit=15 rather than 8: the house-number filter below discards a lot, and a
+  // short list was frequently emptied entirely before it reached the dropdown.
+  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(query)}`
+    + `&limit=15&addressdetails=1&countrycodes=us&layer=address&dedupe=1`
+    + `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
   const res = await fetch(url, { headers: HEADERS });
-  const data: NominatimResult[] = await res.json();
+  // Nominatim rate-limits (roughly 1 request/second) and answers with a non-JSON
+  // body when it does. Parsing that threw and the dropdown silently stayed empty.
+  if (!res.ok) return [];
+  const data: NominatimResult[] = await res.json().catch(() => []);
+  if (!Array.isArray(data)) return [];
   // Plain address points (class "place"/"building") carry the parcel's rooftop
   // coordinates; POIs sharing the address (shops etc.) can be mapped elsewhere.
   // Put address points first so dedupe keeps their coordinates.
@@ -118,13 +133,17 @@ export function formatAddress(raw: string | null | undefined): string {
 
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
-    // Prefer an exact street-address match; fall back to an unrestricted
-    // search so partial addresses still locate something.
-    for (const layer of ['&countrycodes=us&layer=address', '']) {
+    // Prefer an exact street-address match, then fall back to a looser search
+    // so partial addresses still locate something. Both stay inside Texas —
+    // the old fallback had no country restriction at all and could drop a pin
+    // in another state.
+    const bounds = `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
+    for (const layer of [`&countrycodes=us&layer=address${bounds}`, `&countrycodes=us${bounds}`]) {
       const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1${layer}`;
       const res = await fetch(url, { headers: HEADERS });
-      const data: NominatimResult[] = await res.json();
-      if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      if (!res.ok) continue;
+      const data: NominatimResult[] = await res.json().catch(() => []);
+      if (Array.isArray(data) && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     }
   } catch {
     /* fall through */

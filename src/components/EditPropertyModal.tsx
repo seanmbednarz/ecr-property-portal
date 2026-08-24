@@ -87,7 +87,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
       } catch {
         setAddressSuggestions([]);
       }
-    }, 350);
+    }, 600);
   }
 
   function selectSuggestion(s: AddressSuggestion) {
