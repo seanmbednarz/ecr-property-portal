@@ -49,6 +49,11 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const geoDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The address search now issues a fallback request when the first comes
+  // back empty, so a slower earlier keystroke can resolve AFTER a faster later
+  // one and wipe good suggestions. Track the query the UI is waiting on and
+  // discard any response that a newer keystroke has superseded.
+  const latestAddressQuery = useRef('');
   const geoWrapperRef = useRef<HTMLDivElement>(null);
   // Existing login username for this client, if one was provisioned.
   useEffect(() => {
@@ -108,11 +113,14 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
     if (q.length < 4) { setGeoSuggestions([]); setShowSuggestions(false); return; }
     geoDebounceRef.current = setTimeout(async () => {
       setGeoLoading(true);
+      latestAddressQuery.current = q;
       try {
         const data = await searchAddresses(q);
+        if (latestAddressQuery.current !== q) return;  // superseded
         setGeoSuggestions(data);
         setShowSuggestions(data.length > 0);
       } catch {
+        if (latestAddressQuery.current !== q) return;
         setGeoSuggestions([]);
       } finally {
         setGeoLoading(false);

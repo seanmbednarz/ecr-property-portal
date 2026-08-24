@@ -73,6 +73,11 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The address search now issues a fallback request when the first comes
+  // back empty, so a slower earlier keystroke can resolve AFTER a faster later
+  // one and wipe good suggestions. Track the query the UI is waiting on and
+  // discard any response that a newer keystroke has superseded.
+  const latestAddressQuery = useRef('');
   const addressWrapperRef = useRef<HTMLDivElement>(null);
 
   function handleAddressChange(value: string) {
@@ -80,11 +85,14 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
     addressDebounceRef.current = setTimeout(async () => {
       if (value.trim().length < 4) { setAddressSuggestions([]); return; }
+      latestAddressQuery.current = value;
       try {
         const suggestions = await searchAddresses(value);
+        if (latestAddressQuery.current !== value) return;  // superseded
         setAddressSuggestions(suggestions);
         setShowSuggestions(true);
       } catch {
+        if (latestAddressQuery.current !== value) return;
         setAddressSuggestions([]);
       }
     }, 600);

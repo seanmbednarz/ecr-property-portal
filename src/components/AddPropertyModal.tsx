@@ -71,6 +71,11 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The address search now issues a fallback request when the first comes
+  // back empty, so a slower earlier keystroke can resolve AFTER a faster later
+  // one and wipe good suggestions. Track the query the UI is waiting on and
+  // discard any response that a newer keystroke has superseded.
+  const latestAddressQuery = useRef('');
   const addressWrapperRef = useRef<HTMLDivElement>(null);
   const [propertyTypes, setPropertyTypes] = useState<string[]>(['Office']);
   const [listingStatus, setListingStatus] = useState<string[]>(['For Lease']);
@@ -130,11 +135,14 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
 
   async function searchAddresses(query: string) {
     if (query.trim().length < 4) { setAddressSuggestions([]); return; }
+    latestAddressQuery.current = query;
     try {
       const suggestions = await geocodeSearch(query);
+      if (latestAddressQuery.current !== query) return;  // superseded
       setAddressSuggestions(suggestions);
       setShowSuggestions(true);
     } catch {
+      if (latestAddressQuery.current !== query) return;
       setAddressSuggestions([]);
     }
   }
