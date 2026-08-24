@@ -51,6 +51,25 @@ const STREET_ABBR: Record<string, string> = {
   pl: 'Place', sq: 'Square',
 };
 
+// Addresses are sometimes written with the direction trailing the street type
+// ("4604 Ben White Blvd. E") rather than leading the street name
+// ("4604 E Ben White Blvd"). Nominatim finds the second and not the first, so
+// the trailing form is rewritten before searching. Purely a query transform —
+// nothing stored is altered.
+const DIRECTIONS = new Set(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']);
+
+function moveTrailingDirection(query: string): string {
+  const parts = query.trim().split(/\s+/);
+  if (parts.length < 3) return query;
+  const last = parts[parts.length - 1].toLowerCase().replace(/[.,]$/, '');
+  if (!DIRECTIONS.has(last)) return query;
+  // Needs a leading house number to know where the direction belongs.
+  if (!/^\d/.test(parts[0])) return query;
+  const dir = parts.pop()!.replace(/[.,]$/, '');
+  parts.splice(1, 0, dir);
+  return parts.join(' ');
+}
+
 function expandAbbreviations(query: string): string {
   return query.replace(/[A-Za-z]+\.?/g, word => {
     const key = word.toLowerCase().replace(/\.$/, '');
@@ -84,7 +103,7 @@ function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
 export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
   // limit=15 rather than 8: the house-number filter below discards a lot, and a
   // short list was frequently emptied entirely before it reached the dropdown.
-  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(query))}`
+  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(query)))}`
     + `&limit=15&addressdetails=1&countrycodes=us&layer=address&dedupe=1`
     + `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
   const res = await fetch(url, { headers: HEADERS });
@@ -173,7 +192,7 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
     // in another state.
     const bounds = `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
     for (const layer of [`&countrycodes=us&layer=address${bounds}`, `&countrycodes=us${bounds}`]) {
-      const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(address))}&limit=1&addressdetails=1${layer}`;
+      const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(address)))}&limit=1&addressdetails=1${layer}`;
       const res = await fetch(url, { headers: HEADERS });
       if (!res.ok) continue;
       const data: NominatimResult[] = await res.json().catch(() => []);
