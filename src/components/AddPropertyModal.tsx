@@ -33,6 +33,33 @@ function slugify(s: string) {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `prop-${Date.now()}`;
 }
 
+// properties.slug carries a unique index, and the slug is derived from the
+// name — so a second "Echelon IV" (or "echelon iv") collided and the save died
+// on "duplicate key value violates unique constraint properties_slug_key".
+// Take the next free suffix instead: echelon-iv, echelon-iv-2, echelon-iv-3.
+//
+// Resolved before any upload runs, because the slug is also the storage path
+// for the hero image, brochure, photos and floor plans.
+async function uniqueSlug(base: string): Promise<string> {
+  // base is already sanitised to [a-z0-9-], so it's safe to interpolate here.
+  const { data, error } = await supabase
+    .from('properties')
+    .select('slug')
+    .or(`slug.eq.${base},slug.like.${base}-%`);
+
+  // If the lookup fails, fall back to a slug that can't collide rather than
+  // letting the insert blow up on the constraint.
+  if (error) return `${base}-${Date.now()}`;
+
+  const taken = new Set((data ?? []).map((r: any) => r.slug).filter(Boolean));
+  if (!taken.has(base)) return base;
+  for (let i = 2; i < 200; i++) {
+    const candidate = `${base}-${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
 export default function AddPropertyModal({ onClose, onSaved, clients = [], defaultClientId }: AddPropertyModalProps) {
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -194,7 +221,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
     setError('');
 
     try {
-      const slug = slugify(name);
+      const slug = await uniqueSlug(slugify(name));
 
       // Upload hero image
       let finalHeroUrl: string | null = heroImageUrl || null;
@@ -250,10 +277,12 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
       if (propError) throw propError;
 
       // Assign to selected clients
+      const partial: string[] = [];
       if (clientIds.length > 0) {
-        await supabase.from('property_clients').insert(
+        const { error: pcErr } = await supabase.from('property_clients').insert(
           clientIds.map(cid => ({ property_id: propData.id, client_id: cid }))
         );
+        if (pcErr) partial.push(`client assignments (${pcErr.message})`);
       }
 
       // Upload additional photos
@@ -315,12 +344,13 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
           display_order: i,
           client_ids: s.client_ids.filter(id => clientIds.includes(id)),
         }));
-        await supabase.from('property_suites').insert(suiteRows);
+        const { error: suiteErr } = await supabase.from('property_suites').insert(suiteRows);
+        if (suiteErr) partial.push(`suites (${suiteErr.message})`);
       }
 
       // Build a default suite from asking rate if no suites added
       if (suites.length === 0 && askingRate) {
-        await supabase.from('property_suites').insert({
+        const { error: defSuiteErr } = await supabase.from('property_suites').insert({
           property_id: propData.id,
           suite_name: 'Suite 100',
           sf: totalSf ? parseInt(totalSf) : null,
@@ -328,6 +358,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
           available: availability || 'Available Now',
           display_order: 0,
         });
+        if (defSuiteErr) partial.push(`suite (${defSuiteErr.message})`);
       }
 
       // propData was fetched by the property INSERT, before the suites were
@@ -345,8 +376,14 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
         client_ids: clientIds,
       };
 
-      if (photoErrors.length > 0) {
-        setError(`Property saved, but ${photoErrors.length} photo(s) failed to upload: ${photoErrors.join(', ')}`);
+      // The property row exists by this point, so anything that failed after it
+      // is a PARTIAL save. Saying "saved, but X failed" matters: reporting it as
+      // a plain failure invites a retry, which then collides on the unique slug
+      // of the row that did get created.
+      const issues = [...partial];
+      if (photoErrors.length > 0) issues.push(`${photoErrors.length} photo(s): ${photoErrors.join(', ')}`);
+      if (issues.length > 0) {
+        setError(`Property saved, but some parts didn't: ${issues.join('; ')}. Edit the property to finish rather than adding it again.`);
         setSaving(false);
       }
       onSaved(mapped);
