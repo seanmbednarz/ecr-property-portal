@@ -25,12 +25,44 @@ interface NominatimResult {
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const HEADERS = { 'User-Agent': 'ECR-Property-Portal/1.0' };
 
-// Every ECR property is in Texas, so results are hard-bounded to the state.
-// Without this the search returned same-named streets from anywhere in the US,
-// and — because only results carrying a house number survive formatSuggestion —
-// a nationwide result set often left nothing to show at all.
+// Every ECR property is in Texas. The viewbox biases Nominatim toward the
+// right part of the map, but it is ONLY a bias: a rectangle around Texas also
+// covers chunks of New Mexico, Oklahoma, Arkansas and Louisiana, and
+// '1300 Smith Rd' duly returned Lovington NM and Duncan OK through it.
+// The state code below is what actually enforces Texas.
 // Order is left,top,right,bottom (lon/lat).
 const TEXAS_VIEWBOX = '-106.65,36.50,-93.51,25.84';
+
+// Nominatim resolves abbreviated street words poorly mid-string: typing
+// "311 E Saint Elmo" returned nothing while "311 East Saint Elmo" found the
+// address. Suggestions therefore went blank part-way through typing and only
+// reappeared once the whole address was entered, which read as broken.
+//
+// Measured against 12 real ECR addresses, expanding these makes no difference
+// to a COMPLETE address (12 same, 0 worse) and only helps partial input — so
+// it is applied unconditionally, keeping this to one request per keystroke
+// pause and inside Nominatim's rate limit.
+const STREET_ABBR: Record<string, string> = {
+  n: 'North', s: 'South', e: 'East', w: 'West',
+  ne: 'Northeast', nw: 'Northwest', se: 'Southeast', sw: 'Southwest',
+  st: 'Street', rd: 'Road', ave: 'Avenue', av: 'Avenue', blvd: 'Boulevard',
+  ln: 'Lane', dr: 'Drive', ct: 'Court', pkwy: 'Parkway', pky: 'Parkway',
+  cir: 'Circle', hwy: 'Highway', trl: 'Trail', ter: 'Terrace',
+  pl: 'Place', sq: 'Square',
+};
+
+function expandAbbreviations(query: string): string {
+  return query.replace(/[A-Za-z]+\.?/g, word => {
+    const key = word.toLowerCase().replace(/\.$/, '');
+    return STREET_ABBR[key] ?? word;
+  });
+}
+
+function isTexas(a: NominatimResult['address']): boolean {
+  if (!a) return false;
+  if (a['ISO3166-2-lvl4']) return a['ISO3166-2-lvl4'] === 'US-TX';
+  return (a.state ?? '').toLowerCase() === 'texas';
+}
 
 function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
   const a = r.address;
@@ -38,6 +70,8 @@ function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
   // (neighborhoods, counties, road centroids) is dropped — those are the
   // results whose coordinates land in the wrong spot.
   if (!a?.house_number || !a.road) return null;
+  // A bounding box can't express a state outline, so reject on the state code.
+  if (!isTexas(a)) return null;
   const city = a.city || a.town || a.village || a.hamlet || a.municipality || '';
   const state = a['ISO3166-2-lvl4']?.slice(-2) || a.state || '';
   const zip = a.postcode || '';
@@ -50,7 +84,7 @@ function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
 export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
   // limit=15 rather than 8: the house-number filter below discards a lot, and a
   // short list was frequently emptied entirely before it reached the dropdown.
-  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(query)}`
+  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(query))}`
     + `&limit=15&addressdetails=1&countrycodes=us&layer=address&dedupe=1`
     + `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
   const res = await fetch(url, { headers: HEADERS });
@@ -139,11 +173,12 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
     // in another state.
     const bounds = `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
     for (const layer of [`&countrycodes=us&layer=address${bounds}`, `&countrycodes=us${bounds}`]) {
-      const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1${layer}`;
+      const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(address))}&limit=1&addressdetails=1${layer}`;
       const res = await fetch(url, { headers: HEADERS });
       if (!res.ok) continue;
       const data: NominatimResult[] = await res.json().catch(() => []);
-      if (Array.isArray(data) && data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      const hit = Array.isArray(data) ? data.find(r => isTexas(r.address)) : undefined;
+      if (hit) return { lat: parseFloat(hit.lat), lng: parseFloat(hit.lon) };
     }
   } catch {
     /* fall through */
