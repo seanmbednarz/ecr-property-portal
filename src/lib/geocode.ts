@@ -100,10 +100,44 @@ function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
   return { label, lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
 }
 
-export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
+// OpenStreetMap often spells a street as two words where people type it as one
+// ("6300 Bridgepoint Parkway" vs OSM's "Bridge Point Parkway"). Nominatim does
+// not split compounds, so it returns nothing at all — no combination of its
+// parameters helps, and its structured search fails too.
+//
+// These are the pieces such street names are built from. A long word is split
+// only where BOTH halves are recognised, which keeps it from mangling ordinary
+// names, and the split query runs only as a fallback after the normal search
+// comes back empty — so it can never change a result that already worked.
+const NAME_PARTS = new Set([
+  'bridge', 'point', 'park', 'creek', 'hill', 'wood', 'stone', 'north', 'south',
+  'east', 'west', 'oak', 'ridge', 'view', 'brook', 'field', 'lake', 'river',
+  'land', 'town', 'side', 'gate', 'cross', 'spring', 'valley', 'mount', 'glen',
+  'dale', 'ford', 'port', 'haven', 'shore', 'grove', 'meadow', 'hollow', 'pine',
+  'cedar', 'rock', 'sand', 'clear', 'fair', 'green', 'high', 'long', 'water',
+  'summit', 'canyon', 'mesa', 'trail', 'run', 'bend', 'crest', 'lands',
+]);
+
+function splitCompounds(query: string): string | null {
+  let changed = false;
+  const words = query.split(/\s+/).map(word => {
+    const bare = word.toLowerCase().replace(/[.,]+$/, '');
+    if (bare.length < 8) return word;
+    for (let i = 3; i <= bare.length - 3; i++) {
+      if (NAME_PARTS.has(bare.slice(0, i)) && NAME_PARTS.has(bare.slice(i))) {
+        changed = true;
+        return `${word.slice(0, i)} ${word.slice(i)}`;
+      }
+    }
+    return word;
+  });
+  return changed ? words.join(' ') : null;
+}
+
+async function runSearch(raw: string): Promise<AddressSuggestion[]> {
   // limit=15 rather than 8: the house-number filter below discards a lot, and a
   // short list was frequently emptied entirely before it reached the dropdown.
-  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(query)))}`
+  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(raw)))}`
     + `&limit=15&addressdetails=1&countrycodes=us&layer=address&dedupe=1`
     + `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
   const res = await fetch(url, { headers: HEADERS });
@@ -184,6 +218,14 @@ export function formatAddress(raw: string | null | undefined): string {
   return [street, city, `${state} ${zip}`.trim()].filter(Boolean).join(', ');
 }
 
+export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
+  const direct = await runSearch(query);
+  if (direct.length > 0) return direct;
+  // Nothing matched — the street may be spelled as two words in OSM.
+  const split = splitCompounds(query);
+  return split ? runSearch(split) : [];
+}
+
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
     // Prefer an exact street-address match, then fall back to a looser search
@@ -198,6 +240,12 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
       const data: NominatimResult[] = await res.json().catch(() => []);
       const hit = Array.isArray(data) ? data.find(r => isTexas(r.address)) : undefined;
       if (hit) return { lat: parseFloat(hit.lat), lng: parseFloat(hit.lon) };
+    }
+    // Same compound-spelling fallback the autocomplete uses.
+    const split = splitCompounds(address);
+    if (split) {
+      const suggestions = await runSearch(split);
+      if (suggestions[0]) return { lat: suggestions[0].lat, lng: suggestions[0].lng };
     }
   } catch {
     /* fall through */
