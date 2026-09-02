@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Address search self-test</title>
+<style>
+ :root{color-scheme:light}
+ body{margin:0;background:#f2f0ec;color:#1e2624;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+ .w{max-width:640px;margin:0 auto;padding:32px 20px 60px}
+ h1{font-size:22px;margin:0 0 4px}
+ p.sub{color:#6b7472;margin:0 0 24px;font-size:14px}
+ .t{background:#fff;border:1px solid #dedad3;border-radius:12px;overflow:hidden}
+ .r{display:flex;gap:12px;padding:13px 16px;border-top:1px solid #eeebe5;align-items:flex-start}
+ .r:first-child{border-top:0}
+ .ic{width:20px;height:20px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;margin-top:1px}
+ .ok{background:#1f8a4c}.bad{background:#d41f27}.wait{background:#b9b3a8}.warn{background:#b57200}
+ .n{font-weight:600;font-size:14px}
+ .d{color:#6b7472;font-size:13px;margin-top:2px;word-break:break-word}
+ .verdict{margin:22px 0 0;padding:16px;border-radius:12px;font-size:14.5px;line-height:1.55;border:1px solid #dedad3;background:#fff}
+ .verdict b{display:block;margin-bottom:6px;font-size:15px}
+ button{margin-top:18px;font:inherit;font-weight:600;padding:10px 18px;border-radius:9px;border:0;background:#d41f27;color:#fff;cursor:pointer}
+ pre{background:#22282a;color:#e6ecea;padding:14px;border-radius:10px;overflow-x:auto;font-size:12px;margin-top:14px;white-space:pre-wrap}
+</style></head><body><div class="w">
+<h1>Address search self-test</h1>
+<p class="sub">Runs a few checks in this browser and reports what it finds. Nothing is saved or sent anywhere.</p>
+<div class="t" id="t"></div>
+<div class="verdict" id="v" hidden></div>
+<button id="c" hidden>Copy results</button>
+<pre id="raw" hidden></pre>
+<script>
+const T=document.getElementById('t'); const log=[];
+function row(name){const d=document.createElement('div');d.className='r';
+ d.innerHTML='<div class="ic wait">…</div><div><div class="n"></div><div class="d"></div></div>';
+ d.querySelector('.n').textContent=name;T.appendChild(d);
+ return (state,detail)=>{const i=d.querySelector('.ic');
+  i.className='ic '+state;i.textContent=state==='ok'?'✓':state==='bad'?'!':state==='warn'?'!':'…';
+  d.querySelector('.d').textContent=detail;log.push(`[${state}] ${name}: ${detail}`);};}
+
+const rBundle=row('Which app version this browser loaded');
+const rFresh =row('Whether that matches the current release');
+const rCode  =row('Whether the address-lookup code is present');
+const rNet   =row('Whether api.mapbox.com is reachable');
+const rLive  =row('A real address lookup');
+
+(async()=>{
+ let verdict='', tone='ok';
+ // 1. what index.html this browser gets (normal cache rules — we WANT her cache)
+ let cached='', fresh='';
+ try{
+  const h=await (await fetch('/',{cache:'default'})).text();
+  cached=(h.match(/assets\/index-[A-Za-z0-9_-]+\.js/)||['?'])[0];
+  rBundle('ok',cached);
+ }catch(e){rBundle('bad','Could not load the page: '+e.message);}
+ // 2. compare against a cache-busted copy
+ try{
+  const h=await (await fetch('/?cb='+Date.now(),{cache:'reload'})).text();
+  fresh=(h.match(/assets\/index-[A-Za-z0-9_-]+\.js/)||['?'])[0];
+  if(cached&&fresh&&cached!==fresh){rFresh('bad','Stale. This browser has '+cached+' but the current release is '+fresh);
+   verdict='This browser is running an old cached copy of the app. That old copy has the address search removed. Fix: hard-refresh the page — hold Shift and click reload, or press Ctrl+Shift+R (Cmd+Shift+R on a Mac).';tone='bad';}
+  else rFresh('ok','Up to date ('+fresh+')');
+ }catch(e){rFresh('warn','Could not check: '+e.message);}
+ // 3. is the geocoding code actually in the bundle this browser is using?
+ let token='';
+ try{
+  const js=await (await fetch('/'+cached.replace(/^\//,''),{cache:'default'})).text();
+  const has=js.includes('api.mapbox.com');
+  token=(js.match(/pk\.eyJ[A-Za-z0-9._-]+/)||[''])[0];
+  if(has&&token) rCode('ok','Present');
+  else {rCode('bad','Missing from this build — the address lookup was compiled out');
+   if(!verdict){verdict='The app build being served has the address-search code missing. This needs a redeploy with the Mapbox token present.';tone='bad';}}
+ }catch(e){rCode('warn','Could not check: '+e.message);}
+ // 4/5. can this network actually reach Mapbox, and does a lookup return anything?
+ if(token){
+  try{
+   const u='https://api.mapbox.com/search/geocode/v6/forward?q='+encodeURIComponent('7600 Burnet Rd, Austin, TX')
+     +'&autocomplete=true&country=us&types=address&limit=3&access_token='+token;
+   const t0=performance.now(); const res=await fetch(u); const ms=Math.round(performance.now()-t0);
+   rNet(res.ok?'ok':'bad','HTTP '+res.status+' in '+ms+'ms');
+   if(res.ok){
+    const d=await res.json(); const n=(d.features||[]).length;
+    if(n>0){rLive('ok',n+' result(s) — e.g. '+d.features[0].properties.full_address);}
+    else {rLive('bad','Reached Mapbox but got 0 results');if(!verdict){verdict='Mapbox is reachable but returned nothing for a known-good address. Send this screen over so we can look at the account.';tone='bad';}}
+   } else {
+    const body=(await res.text()).slice(0,120);
+    rLive('bad','Not attempted — '+body);
+    if(!verdict){verdict='Mapbox rejected the request (HTTP '+res.status+'). That usually means the map token needs attention. Send this screen over.';tone='bad';}
+   }
+  }catch(e){
+   rNet('bad','Blocked before it left this browser — '+e.message);
+   rLive('bad','Not attempted');
+   if(!verdict){verdict='This browser or network is blocking api.mapbox.com, so the address search can never load suggestions. Most often that is an ad-blocker or privacy extension (try disabling it for this site, or use a private window), or a company firewall/VPN blocking the domain.';tone='bad';}
+  }
+ } else {rNet('warn','Skipped — no map token found in the app build');rLive('warn','Skipped');}
+
+ const v=document.getElementById('v');v.hidden=false;
+ v.style.borderColor=tone==='bad'?'#d41f27':'#1f8a4c';
+ v.innerHTML='<b>'+(tone==='bad'?'Found a problem':'All checks passed')+'</b>'+
+  (verdict||'The address search should be working in this browser. If it still is not, note exactly what you type and what happens, and send that over.');
+ const raw=document.getElementById('raw');
+ raw.textContent=log.join('\n')+'\n\nbrowser: '+navigator.userAgent+'\nwhen: '+new Date().toISOString();
+ const c=document.getElementById('c');c.hidden=false;
+ c.onclick=()=>{raw.hidden=false;navigator.clipboard?.writeText(raw.textContent).then(()=>c.textContent='Copied — paste it in a reply').catch(()=>c.textContent='Select the text below and copy it');};
+})();
+</script></div></body></html>
