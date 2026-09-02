@@ -54,6 +54,17 @@ function rank(f: MapboxFeature): number {
   return ACCURACY_RANK[f.properties.coordinates?.accuracy ?? ''] ?? INTERPOLATED;
 }
 
+// Within one accuracy tier Mapbox's own order can put a far-flung match first:
+// "3711 S IH 35" led with Belton, two hours north, ahead of both Austin
+// addresses. The proximity bias on the request is not enough on its own, so
+// equal-accuracy results are broken apart by distance from Austin. Squared
+// degrees are fine here — this only ever orders one tier against itself, and
+// never drops a result, so a San Antonio or Houston address still appears.
+function nearness(f: MapboxFeature): number {
+  const [lng, lat] = f.geometry.coordinates;
+  return (lat - 30.267) ** 2 + (lng + 97.743) ** 2;
+}
+
 function formatSuggestion(f: MapboxFeature): AddressSuggestion | null {
   const c = f.properties.context;
   const num = c?.address?.address_number;
@@ -118,7 +129,7 @@ async function runSearch(query: string, autocomplete: boolean, limit: number): P
 }
 
 function toSuggestions(features: MapboxFeature[]): AddressSuggestion[] {
-  const ranked = [...features].sort((a, b) => rank(a) - rank(b));
+  const ranked = [...features].sort((a, b) => rank(a) - rank(b) || nearness(a) - nearness(b));
   const seen = new Set<string>();
   const out: AddressSuggestion[] = [];
   for (const f of ranked) {
