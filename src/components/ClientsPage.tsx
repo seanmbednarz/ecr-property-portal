@@ -123,7 +123,9 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
         if (latestAddressQuery.current !== q) return;
         setGeoSuggestions([]);
       } finally {
-        setGeoLoading(false);
+        // Only the newest query owns the spinner; a superseded one must not
+        // clear it while a later request is still in flight.
+        if (latestAddressQuery.current === q) setGeoLoading(false);
       }
     }, 600);
     return () => { if (geoDebounceRef.current) clearTimeout(geoDebounceRef.current); };

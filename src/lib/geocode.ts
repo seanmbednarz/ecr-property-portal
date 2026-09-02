@@ -1,114 +1,80 @@
 export interface AddressSuggestion {
-  label: string; // "311 E Saint Elmo Rd, Austin, TX 78745"
+  label: string; // "311 East Saint Elmo Road, Austin, TX 78745"
   lat: number;
   lng: number;
 }
 
-interface NominatimResult {
-  lat: string;
-  lon: string;
-  class?: string;
-  address?: {
-    house_number?: string;
-    road?: string;
-    city?: string;
-    town?: string;
-    village?: string;
-    hamlet?: string;
-    municipality?: string;
-    state?: string;
-    postcode?: string;
-    'ISO3166-2-lvl4'?: string; // "US-TX"
+// Mapbox Geocoding v6, not Nominatim. OSM's usage policy is explicit that the
+// public Nominatim instance "does not support" auto-complete and that you
+// "must not implement such a service on the client side using the API" — and
+// it enforces that by stalling: measured against real typing, requests took
+// 2-15s and returned nothing, so the dropdown simply stayed empty. The pile of
+// query rewriting this file used to carry (abbreviation expansion, trailing
+// direction moves, a Texas state-code filter) existed to paper over that and
+// is handled natively here. Nominatim also placed 311 E Saint Elmo Rd about
+// 500m off, on 701 — OSM's own reverse geocoder disagreed with its forward one.
+const MAPBOX = 'https://api.mapbox.com/search/geocode/v6/forward';
+const TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+
+// minLon,minLat,maxLon,maxLat — note this is NOT the order Nominatim's viewbox
+// used. Every ECR property is in Texas, and unlike Nominatim's viewbox this is
+// a hard restriction, so no state-code filter is needed on the way back.
+const TEXAS_BBOX = '-106.65,25.84,-93.51,36.50';
+const AUSTIN = '-97.743,30.267'; // proximity bias: most properties are here
+
+// Nominatim answered slowly rather than with an error, so a plain fetch could
+// hang for the better part of a minute with nothing on screen. Mapbox is fast
+// (~150-450ms measured) but the ceiling keeps a stalled request from wedging
+// the dropdown open forever.
+const TIMEOUT_MS = 8000;
+
+interface MapboxFeature {
+  geometry: { coordinates: [number, number] };
+  properties: {
+    coordinates?: { accuracy?: string };
+    context?: {
+      address?: { address_number?: string; street_name?: string };
+      street?: { name?: string };
+      postcode?: { name?: string };
+      place?: { name?: string };
+      region?: { region_code?: string; name?: string };
+    };
   };
 }
 
-const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-const HEADERS = { 'User-Agent': 'ECR-Property-Portal/1.0' };
-
-// Every ECR property is in Texas. The viewbox biases Nominatim toward the
-// right part of the map, but it is ONLY a bias: a rectangle around Texas also
-// covers chunks of New Mexico, Oklahoma, Arkansas and Louisiana, and
-// '1300 Smith Rd' duly returned Lovington NM and Duncan OK through it.
-// The state code below is what actually enforces Texas.
-// Order is left,top,right,bottom (lon/lat).
-const TEXAS_VIEWBOX = '-106.65,36.50,-93.51,25.84';
-
-// Nominatim resolves abbreviated street words poorly mid-string: typing
-// "311 E Saint Elmo" returned nothing while "311 East Saint Elmo" found the
-// address. Suggestions therefore went blank part-way through typing and only
-// reappeared once the whole address was entered, which read as broken.
-//
-// Measured against 12 real ECR addresses, expanding these makes no difference
-// to a COMPLETE address (12 same, 0 worse) and only helps partial input — so
-// it is applied unconditionally, keeping this to one request per keystroke
-// pause and inside Nominatim's rate limit.
-const STREET_ABBR: Record<string, string> = {
-  n: 'North', s: 'South', e: 'East', w: 'West',
-  ne: 'Northeast', nw: 'Northwest', se: 'Southeast', sw: 'Southwest',
-  st: 'Street', rd: 'Road', ave: 'Avenue', av: 'Avenue', blvd: 'Boulevard',
-  ln: 'Lane', dr: 'Drive', ct: 'Court', pkwy: 'Parkway', pky: 'Parkway',
-  cir: 'Circle', hwy: 'Highway', trl: 'Trail', ter: 'Terrace',
-  pl: 'Place', sq: 'Square',
-};
-
-// Addresses are sometimes written with the direction trailing the street type
-// ("4604 Ben White Blvd. E") rather than leading the street name
-// ("4604 E Ben White Blvd"). Nominatim finds the second and not the first, so
-// the trailing form is rewritten before searching. Purely a query transform —
-// nothing stored is altered.
-const DIRECTIONS = new Set(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']);
-
-function moveTrailingDirection(query: string): string {
-  const parts = query.trim().split(/\s+/);
-  if (parts.length < 3) return query;
-  const last = parts[parts.length - 1].toLowerCase().replace(/[.,]$/, '');
-  if (!DIRECTIONS.has(last)) return query;
-  // Needs a leading house number to know where the direction belongs.
-  if (!/^\d/.test(parts[0])) return query;
-  const dir = parts.pop()!.replace(/[.,]$/, '');
-  parts.splice(1, 0, dir);
-  return parts.join(' ');
+// Mapbox grades how it derived a point. "rooftop"/"point" are real address
+// records; "interpolated" is a guess along the street line, and that is the
+// tier the genuinely wrong matches land in — "6300 Bridgepoint Pkwy" returns an
+// interpolated "6300 Ridgepoint Drive, Irving" while the correct "Bridge Point
+// Parkway" comes back as a point. Ranking on this both orders the dropdown and
+// tells us when to bother with the compound-word retry below.
+const ACCURACY_RANK: Record<string, number> = { rooftop: 0, parcel: 1, point: 2 };
+const INTERPOLATED = 3;
+function rank(f: MapboxFeature): number {
+  return ACCURACY_RANK[f.properties.coordinates?.accuracy ?? ''] ?? INTERPOLATED;
 }
 
-function expandAbbreviations(query: string): string {
-  return query.replace(/[A-Za-z]+\.?/g, word => {
-    const key = word.toLowerCase().replace(/\.$/, '');
-    return STREET_ABBR[key] ?? word;
-  });
-}
-
-function isTexas(a: NominatimResult['address']): boolean {
-  if (!a) return false;
-  if (a['ISO3166-2-lvl4']) return a['ISO3166-2-lvl4'] === 'US-TX';
-  return (a.state ?? '').toLowerCase() === 'texas';
-}
-
-function formatSuggestion(r: NominatimResult): AddressSuggestion | null {
-  const a = r.address;
-  // Only offer real street addresses (house number + road). Anything else
-  // (neighborhoods, counties, road centroids) is dropped — those are the
-  // results whose coordinates land in the wrong spot.
-  if (!a?.house_number || !a.road) return null;
-  // A bounding box can't express a state outline, so reject on the state code.
-  if (!isTexas(a)) return null;
-  const city = a.city || a.town || a.village || a.hamlet || a.municipality || '';
-  const state = a['ISO3166-2-lvl4']?.slice(-2) || a.state || '';
-  const zip = a.postcode || '';
-  const label = [`${a.house_number} ${a.road}`, city, `${state} ${zip}`.trim()]
+function formatSuggestion(f: MapboxFeature): AddressSuggestion | null {
+  const c = f.properties.context;
+  const num = c?.address?.address_number;
+  const street = c?.address?.street_name ?? c?.street?.name;
+  // Only offer real street addresses. Without a house number the pin is the
+  // street centroid, which is the class of result that lands in the wrong spot.
+  if (!num || !street) return null;
+  const city = c?.place?.name ?? '';
+  const state = c?.region?.region_code ?? c?.region?.name ?? '';
+  const zip = c?.postcode?.name ?? '';
+  const [lng, lat] = f.geometry.coordinates;
+  const label = [`${num} ${street}`, city, `${state} ${zip}`.trim()]
     .filter(Boolean)
     .join(', ');
-  return { label, lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+  return { label, lat, lng };
 }
 
-// OpenStreetMap often spells a street as two words where people type it as one
-// ("6300 Bridgepoint Parkway" vs OSM's "Bridge Point Parkway"). Nominatim does
-// not split compounds, so it returns nothing at all — no combination of its
-// parameters helps, and its structured search fails too.
-//
-// These are the pieces such street names are built from. A long word is split
-// only where BOTH halves are recognised, which keeps it from mangling ordinary
-// names, and the split query runs only as a fallback after the normal search
-// comes back empty — so it can never change a result that already worked.
+// Mapbox, like OSM, sometimes spells a street as two words where people type it
+// as one ("6300 Bridgepoint Parkway" vs "Bridge Point Parkway"). These are the
+// pieces such names are built from; a long word is split only where BOTH halves
+// are recognised, which keeps it from mangling ordinary names.
 const NAME_PARTS = new Set([
   'bridge', 'point', 'park', 'creek', 'hill', 'wood', 'stone', 'north', 'south',
   'east', 'west', 'oak', 'ridge', 'view', 'brook', 'field', 'lake', 'river',
@@ -134,35 +100,63 @@ function splitCompounds(query: string): string | null {
   return changed ? words.join(' ') : null;
 }
 
-async function runSearch(raw: string): Promise<AddressSuggestion[]> {
-  // limit=15 rather than 8: the house-number filter below discards a lot, and a
-  // short list was frequently emptied entirely before it reached the dropdown.
-  const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(raw)))}`
-    + `&limit=15&addressdetails=1&countrycodes=us&layer=address&dedupe=1`
-    + `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
-  const res = await fetch(url, { headers: HEADERS });
-  // Nominatim rate-limits (roughly 1 request/second) and answers with a non-JSON
-  // body when it does. Parsing that threw and the dropdown silently stayed empty.
-  if (!res.ok) return [];
-  const data: NominatimResult[] = await res.json().catch(() => []);
-  if (!Array.isArray(data)) return [];
-  // Plain address points (class "place"/"building") carry the parcel's rooftop
-  // coordinates; POIs sharing the address (shops etc.) can be mapped elsewhere.
-  // Put address points first so dedupe keeps their coordinates.
-  const ranked = [...data].sort((a, b) => {
-    const rank = (r: NominatimResult) => (r.class === 'place' || r.class === 'building' ? 0 : 1);
-    return rank(a) - rank(b);
-  });
+async function runSearch(query: string, autocomplete: boolean, limit: number): Promise<MapboxFeature[]> {
+  if (!TOKEN) return [];
+  const url = `${MAPBOX}?q=${encodeURIComponent(query)}`
+    + `&autocomplete=${autocomplete}&country=us&types=address&limit=${limit}`
+    + `&bbox=${TEXAS_BBOX}&proximity=${AUSTIN}`
+    + `&access_token=${TOKEN}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => null);
+    const features = data?.features;
+    return Array.isArray(features) ? (features as MapboxFeature[]) : [];
+  } catch {
+    return []; // aborted, offline, or malformed
+  }
+}
+
+function toSuggestions(features: MapboxFeature[]): AddressSuggestion[] {
+  const ranked = [...features].sort((a, b) => rank(a) - rank(b));
   const seen = new Set<string>();
   const out: AddressSuggestion[] = [];
-  for (const r of ranked) {
-    const s = formatSuggestion(r);
+  for (const f of ranked) {
+    const s = formatSuggestion(f);
     if (s && !seen.has(s.label)) {
       seen.add(s.label);
       out.push(s);
     }
   }
   return out.slice(0, 5);
+}
+
+export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
+  const direct = await runSearch(query, true, 5);
+  // Only retry when nothing came back at all, or when everything Mapbox found
+  // was interpolated — that is the signature of a compound-word miss. A retry
+  // can therefore never displace a result that already resolved properly.
+  const weak = direct.length === 0 || direct.every(f => rank(f) === INTERPOLATED);
+  if (!weak) return toSuggestions(direct);
+  const split = splitCompounds(query);
+  if (!split) return toSuggestions(direct);
+  const retry = await runSearch(split, true, 5);
+  const better = retry.some(f => rank(f) < INTERPOLATED);
+  return toSuggestions(better ? retry : direct);
+}
+
+export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  // autocomplete=false: this runs on a complete address the user has finished
+  // typing, so prefix matching only adds noise.
+  const direct = await runSearch(address, false, 1);
+  const best = toSuggestions(direct)[0];
+  if (best && direct.some(f => rank(f) < INTERPOLATED)) return { lat: best.lat, lng: best.lng };
+  const split = splitCompounds(address);
+  if (split) {
+    const retry = toSuggestions(await runSearch(split, false, 1))[0];
+    if (retry) return { lat: retry.lat, lng: retry.lng };
+  }
+  return best ? { lat: best.lat, lng: best.lng } : null;
 }
 
 const STATE_ABBR: Record<string, string> = {
@@ -184,6 +178,9 @@ const STATE_ABBR: Record<string, string> = {
  * ("311, East Saint Elmo Road, Southpark, Austin, Travis County, Texas,
  * 78745, United States") down to "311 East Saint Elmo Road, Austin, TX 78745".
  * Strings that don't look like that pattern are returned untouched.
+ *
+ * Still needed after the move to Mapbox: it cleans up rows written by the
+ * previous geocoder, which are already in the database.
  */
 export function formatAddress(raw: string | null | undefined): string {
   if (!raw) return '';
@@ -216,39 +213,4 @@ export function formatAddress(raw: string | null | undefined): string {
   const city = cityIdx > streetEnd ? parts[cityIdx] : '';
 
   return [street, city, `${state} ${zip}`.trim()].filter(Boolean).join(', ');
-}
-
-export async function searchAddresses(query: string): Promise<AddressSuggestion[]> {
-  const direct = await runSearch(query);
-  if (direct.length > 0) return direct;
-  // Nothing matched — the street may be spelled as two words in OSM.
-  const split = splitCompounds(query);
-  return split ? runSearch(split) : [];
-}
-
-export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  try {
-    // Prefer an exact street-address match, then fall back to a looser search
-    // so partial addresses still locate something. Both stay inside Texas —
-    // the old fallback had no country restriction at all and could drop a pin
-    // in another state.
-    const bounds = `&viewbox=${TEXAS_VIEWBOX}&bounded=1`;
-    for (const layer of [`&countrycodes=us&layer=address${bounds}`, `&countrycodes=us${bounds}`]) {
-      const url = `${NOMINATIM}?format=json&q=${encodeURIComponent(expandAbbreviations(moveTrailingDirection(address)))}&limit=1&addressdetails=1${layer}`;
-      const res = await fetch(url, { headers: HEADERS });
-      if (!res.ok) continue;
-      const data: NominatimResult[] = await res.json().catch(() => []);
-      const hit = Array.isArray(data) ? data.find(r => isTexas(r.address)) : undefined;
-      if (hit) return { lat: parseFloat(hit.lat), lng: parseFloat(hit.lon) };
-    }
-    // Same compound-spelling fallback the autocomplete uses.
-    const split = splitCompounds(address);
-    if (split) {
-      const suggestions = await runSearch(split);
-      if (suggestions[0]) return { lat: suggestions[0].lat, lng: suggestions[0].lng };
-    }
-  } catch {
-    /* fall through */
-  }
-  return null;
 }

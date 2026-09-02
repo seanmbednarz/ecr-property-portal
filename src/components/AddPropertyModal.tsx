@@ -70,6 +70,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   const [address, setAddress] = useState('');
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The address search now issues a fallback request when the first comes
   // back empty, so a slower earlier keystroke can resolve AFTER a faster later
@@ -134,8 +135,9 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   }
 
   async function searchAddresses(query: string) {
-    if (query.trim().length < 4) { setAddressSuggestions([]); return; }
+    if (query.trim().length < 4) { setAddressSuggestions([]); setAddressLoading(false); return; }
     latestAddressQuery.current = query;
+    setAddressLoading(true);
     try {
       const suggestions = await geocodeSearch(query);
       if (latestAddressQuery.current !== query) return;  // superseded
@@ -144,12 +146,19 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
     } catch {
       if (latestAddressQuery.current !== query) return;
       setAddressSuggestions([]);
+    } finally {
+      // Only the newest query owns the spinner; a superseded one must not
+      // clear it while a later request is still in flight.
+      if (latestAddressQuery.current === query) setAddressLoading(false);
     }
   }
 
   function handleAddressChange(value: string) {
     setAddress(value);
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    // Spinner goes up on keystroke, not when the request fires, so the 600ms
+    // debounce window doesn't read as a dead input.
+    setAddressLoading(value.trim().length >= 4);
     addressDebounceRef.current = setTimeout(() => searchAddresses(value), 600);
   }
 
@@ -159,6 +168,11 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
     setLng(s.lng.toFixed(6));
     setAddressSuggestions([]);
     setShowSuggestions(false);
+    setAddressLoading(false);
+    // A pending debounce would otherwise fire for the half-typed text and
+    // reopen the dropdown over the address the user just picked.
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    latestAddressQuery.current = s.label;
   }
 
   // Close suggestions on outside click
@@ -459,6 +473,11 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
                   placeholder="123 Main St, Austin, TX 78701"
                   autoComplete="off"
                 />
+                {addressLoading && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'rgba(212,31,39,0.4)', borderTopColor: 'transparent' }} />
+                  </div>
+                )}
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div
                     className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden shadow-xl z-50"

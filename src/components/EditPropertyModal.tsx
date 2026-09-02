@@ -72,6 +72,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   const [address, setAddress] = useState(property.address);
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The address search now issues a fallback request when the first comes
   // back empty, so a slower earlier keystroke can resolve AFTER a faster later
@@ -83,8 +84,11 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   function handleAddressChange(value: string) {
     setAddress(value);
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    // Spinner goes up on keystroke, not when the request fires, so the 600ms
+    // debounce window doesn't read as a dead input.
+    setAddressLoading(value.trim().length >= 4);
     addressDebounceRef.current = setTimeout(async () => {
-      if (value.trim().length < 4) { setAddressSuggestions([]); return; }
+      if (value.trim().length < 4) { setAddressSuggestions([]); setAddressLoading(false); return; }
       latestAddressQuery.current = value;
       try {
         const suggestions = await searchAddresses(value);
@@ -94,6 +98,10 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
       } catch {
         if (latestAddressQuery.current !== value) return;
         setAddressSuggestions([]);
+      } finally {
+        // Only the newest query owns the spinner; a superseded one must not
+        // clear it while a later request is still in flight.
+        if (latestAddressQuery.current === value) setAddressLoading(false);
       }
     }, 600);
   }
@@ -104,6 +112,11 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
     setLng(s.lng.toFixed(6));
     setAddressSuggestions([]);
     setShowSuggestions(false);
+    setAddressLoading(false);
+    // A pending debounce would otherwise fire for the half-typed text and
+    // reopen the dropdown over the address the user just picked.
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+    latestAddressQuery.current = s.label;
   }
 
   useEffect(() => {
@@ -418,6 +431,11 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
                   {...inpFocus}
                   onFocus={e => { inpFocus.onFocus(e); if (addressSuggestions.length > 0) setShowSuggestions(true); }}
                 />
+                {addressLoading && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'rgba(212,31,39,0.4)', borderTopColor: 'transparent' }} />
+                  </div>
+                )}
                 {showSuggestions && addressSuggestions.length > 0 && (
                   <div
                     className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden shadow-xl z-50"
