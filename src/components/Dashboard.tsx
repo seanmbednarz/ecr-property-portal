@@ -297,6 +297,16 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     [properties, inScope],
   );
 
+  // How much of the in-scope set actually records a contiguous figure, so the
+  // filter can admit when a blank result is missing data rather than no match.
+  const contiguousCoverage = useMemo(() => {
+    const inView = properties.filter(inScope);
+    return {
+      withValue: inView.filter(p => p.max_contiguous_sf != null).length,
+      total: inView.length,
+    };
+  }, [properties, inScope]);
+
   // Brokers working a single client shouldn't have to pick it every session.
   useEffect(() => {
     if (!isBroker || selectedClientId) return;
@@ -546,6 +556,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             propertyTypes={propertyTypes}
             onTypeFilter={handleTypeFilter}
             markets={markets}
+            contiguousCoverage={contiguousCoverage}
           />
 
           {/* Sort — z 35: above the map and list overlay (30), below the
