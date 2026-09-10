@@ -20,12 +20,19 @@ interface Props {
   onTypeFilter: (t: string) => void;
   /** Submarkets present in what this viewer can see. */
   markets: string[];
+  /**
+   * How many in-scope properties actually record a max contiguous figure.
+   * Filtering on a field that is mostly blank returns almost nothing, which
+   * reads as a broken filter rather than as missing data — so say so.
+   */
+  contiguousCoverage: { withValue: number; total: number };
   /** Layout classes from the sub-bar (margins only). */
   className?: string;
 }
 
 export default function PropertyFilterMenu({
-  filters, onChange, typeFilter, propertyTypes, onTypeFilter, markets, className = '',
+  filters, onChange, typeFilter, propertyTypes, onTypeFilter, markets,
+  contiguousCoverage, className = '',
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -94,9 +101,25 @@ export default function PropertyFilterMenu({
 
           <div className="px-4 py-3 flex flex-col gap-4">
             <RangeField
+              label="Max Contiguous"
+              unit="SF"
+              hint="Largest single adjoining block. Use this for a tenant who needs the space together."
+              min={filters.maxContiguousMin} max={filters.maxContiguousMax}
+              onMin={v => set({ maxContiguousMin: v })} onMax={v => set({ maxContiguousMax: v })}
+            />
+
+            {contiguousCoverage.withValue < contiguousCoverage.total && (
+              <p className="text-xs -mt-2" style={{ color: '#8a6a2f' }}>
+                Recorded for {contiguousCoverage.withValue} of {contiguousCoverage.total} properties
+                in view. The rest can't match a contiguous filter until the figure is
+                filled in on the property.
+              </p>
+            )}
+
+            <RangeField
               label="Suite Size"
               unit="SF"
-              hint="Matches a building with any suite in this range."
+              hint="Matches a building with any one suite in this range."
               min={filters.suiteSfMin} max={filters.suiteSfMax}
               onMin={v => set({ suiteSfMin: v })} onMax={v => set({ suiteSfMax: v })}
             />

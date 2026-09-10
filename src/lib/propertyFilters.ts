@@ -25,6 +25,18 @@ export interface PropertyFilters {
   /** Size of the whole building, in SF. */
   totalSfMin: number | null;
   totalSfMax: number | null;
+  /**
+   * Largest single block of adjoining space, in SF — properties.max_contiguous_sf.
+   *
+   * This is a different question from suite size and must not be confused with
+   * it. A building can offer 250,000 SF across ten scattered floors and still
+   * have no block bigger than 30,000; a tenant who needs 100,000 together cares
+   * only about the block. Suite-size filters can't answer that, because a
+   * summary row entered as a suite ("Total Available") looks exactly like a
+   * real suite.
+   */
+  maxContiguousMin: number | null;
+  maxContiguousMax: number | null;
   /** Asking rate in $/SF/yr. Lease-style suites only — see rateOfSuite. */
   rateMin: number | null;
   rateMax: number | null;
@@ -39,6 +51,8 @@ export const EMPTY_FILTERS: PropertyFilters = {
   suiteSfMax: null,
   totalSfMin: null,
   totalSfMax: null,
+  maxContiguousMin: null,
+  maxContiguousMax: null,
   rateMin: null,
   rateMax: null,
   markets: [],
@@ -98,10 +112,20 @@ export function suiteMatches(s: Suite, f: PropertyFilters): boolean {
  * `suites` must already be narrowed to what the current viewer may see.
  */
 export function propertyMatches(
-  p: { total_sf?: number | null; market?: string | null; suites?: Suite[] },
+  p: {
+    total_sf?: number | null;
+    max_contiguous_sf?: number | null;
+    market?: string | null;
+    suites?: Suite[];
+  },
   f: PropertyFilters,
 ): boolean {
   if (!inRange(p.total_sf, f.totalSfMin, f.totalSfMax)) return false;
+  // A property with no recorded contiguous block can't be shown to satisfy a
+  // contiguous requirement. Saying "unknown" is the honest answer here: the
+  // alternative — falling back to suite sizes — is exactly the confusion this
+  // filter exists to end.
+  if (!inRange(p.max_contiguous_sf, f.maxContiguousMin, f.maxContiguousMax)) return false;
   if (f.markets.length > 0 && !f.markets.includes(p.market ?? '')) return false;
   // A building with nothing available can't satisfy a question about suites.
   if (hasSuiteCriteria(f)) {
@@ -118,6 +142,7 @@ export function activeFilterCount(f: PropertyFilters): number {
   let n = 0;
   if (f.suiteSfMin != null || f.suiteSfMax != null) n++;
   if (f.totalSfMin != null || f.totalSfMax != null) n++;
+  if (f.maxContiguousMin != null || f.maxContiguousMax != null) n++;
   if (f.rateMin != null || f.rateMax != null) n++;
   if (f.markets.length > 0) n++;
   if (f.listingTypes.length > 0) n++;
