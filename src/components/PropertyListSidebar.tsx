@@ -10,11 +10,16 @@ interface PropertyListSidebarProps {
   typeFilter: string;
   propertyTypes: string[];
   isAdmin?: boolean;
+  /** Suites that satisfied a suite-level filter; null when none is active. */
+  matchedSuiteIds?: Set<string> | null;
+  /** True when something is narrowing the list, so "none" can offer a reset. */
+  filtersActive?: boolean;
   onSelect: (p: Property) => void;
   onOpenDetail: (p: Property) => void;
   onTypeFilter: (t: string) => void;
   onFavoriteToggle: (id: string, current: boolean) => void;
   onEdit?: (p: Property) => void;
+  onClearFilters?: () => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -41,11 +46,14 @@ export default function PropertyListSidebar({
   typeFilter,
   propertyTypes,
   isAdmin,
+  matchedSuiteIds,
+  filtersActive,
   onSelect,
   onOpenDetail,
   onTypeFilter,
   onFavoriteToggle,
   onEdit,
+  onClearFilters,
 }: PropertyListSidebarProps) {
   return (
     <aside
@@ -75,9 +83,22 @@ export default function PropertyListSidebar({
       {/* List */}
       <div className="flex-1 overflow-y-auto">
         {properties.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 py-12">
+          <div className="flex flex-col items-center justify-center h-full gap-2 py-12 px-4 text-center">
             <Building className="w-8 h-8" style={{ color: '#c8c3b8' }} />
-            <p className="text-sm" style={{ color: '#aaa49a' }}>No properties</p>
+            <p className="text-sm" style={{ color: '#aaa49a' }}>
+              {filtersActive ? 'No properties match your filters' : 'No properties'}
+            </p>
+            {filtersActive && onClearFilters && (
+              <button
+                onClick={onClearFilters}
+                className="mt-1 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide text-white transition-colors"
+                style={{ backgroundColor: '#d41f27' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
         ) : (
           properties.map((p, i) => (
@@ -151,6 +172,7 @@ export default function PropertyListSidebar({
                     {p.total_sf.toLocaleString()} SF
                   </p>
                 )}
+                {matchedSuiteIds && <MatchHint property={p} matchedSuiteIds={matchedSuiteIds} />}
                 <button
                   onClick={(e) => { e.stopPropagation(); onOpenDetail(p); }}
                   className="text-xs font-semibold mt-1.5 transition-colors"
@@ -175,6 +197,22 @@ export default function PropertyListSidebar({
         )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * Says why this property survived a suite-level filter. The row itself only
+ * shows the building's total SF, which for a 100k-SF suite search is the wrong
+ * number to be looking at.
+ */
+function MatchHint({ property, matchedSuiteIds }: { property: Property; matchedSuiteIds: Set<string> }) {
+  const hits = (property.suites ?? []).filter(s => matchedSuiteIds.has(s.id));
+  if (hits.length === 0) return null;
+  const only = hits.length === 1 && hits[0].sf != null ? hits[0].sf : null;
+  return (
+    <p className="text-xs mt-0.5 font-semibold tabular-nums" style={{ color: '#d41f27' }}>
+      {only != null ? `${only.toLocaleString()} SF matches` : `${hits.length} suites match`}
+    </p>
   );
 }
 

@@ -17,6 +17,11 @@ import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Down
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
 import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient, isSaleSuite } from '../lib/propertyMeta';
+import PropertyFilterMenu from './PropertyFilterMenu';
+import {
+  PropertyFilters, EMPTY_FILTERS, activeFilterCount, hasSuiteCriteria,
+  propertyMatches, suiteMatches,
+} from '../lib/propertyFilters';
 import { formatAddress } from '../lib/geocode';
 import { mapClientBrokers } from '../lib/clientBrokers';
 import { buildSummaryReport, SummaryReport } from '../lib/summaryReport';
@@ -64,6 +69,10 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [filters, setFilters] = useState<PropertyFilters>(EMPTY_FILTERS);
+  // Set while asking whether an export should cover everything or just the
+  // narrowed list; holds which export the user asked for.
+  const [exportScope, setExportScope] = useState<'excel' | 'pdf' | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('featured');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobileTab>('list');
@@ -115,26 +124,38 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setLoading(false);
   }
 
-  function currentReport(): SummaryReport {
+  function reportFor(list: Property[]): SummaryReport {
     const name = selectedClient?.company || selectedClient?.name || '';
-    return buildSummaryReport(clientProperties, name);
+    return buildSummaryReport(list, name);
   }
 
-  async function handleExportExcel() {
+  /**
+   * Exports used to always cover every property assigned to the client, so a
+   * search could never quietly drop one from a report. Now that filters exist,
+   * silently ignoring them would be just as surprising in the other direction —
+   * so when the on-screen list is narrower than the client's full set, ask.
+   */
+  function requestExport(kind: 'excel' | 'pdf') {
+    if (filtered.length === clientProperties.length) runExport(kind, clientProperties);
+    else setExportScope(kind);
+  }
+
+  async function runExport(kind: 'excel' | 'pdf', list: Property[]) {
+    setExportScope(null);
+    if (kind === 'pdf') {
+      setExporting('pdf');
+      setPrintReport(reportFor(list));
+      return;
+    }
     setExporting('excel');
     try {
       const { downloadSummaryWorkbook } = await import('../lib/exportExcel');
-      await downloadSummaryWorkbook(currentReport());
+      await downloadSummaryWorkbook(reportFor(list));
     } catch (e: any) {
       setLoadError(`Couldn't build the Excel report: ${e?.message ?? 'unknown error'}`);
     } finally {
       setExporting(null);
     }
-  }
-
-  function handleExportPdf() {
-    setExporting('pdf');
-    setPrintReport(currentReport());
   }
 
   // Fired by PrintSummary once its photos have decoded.
@@ -267,6 +288,15 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   // Type-filter chips reflect what this viewer can actually see.
   const propertyTypes = ['All', ...Array.from(new Set(properties.filter(inScope).flatMap(p => propertyTypesOf(p))))];
 
+  // Likewise the submarket options — never offer a filter that can only ever
+  // return nothing for this viewer.
+  const markets = useMemo(
+    () => Array.from(new Set(
+      properties.filter(inScope).map(p => p.market).filter((m): m is string => !!m),
+    )).sort((a, b) => a.localeCompare(b)),
+    [properties, inScope],
+  );
+
   // Brokers working a single client shouldn't have to pick it every session.
   useEffect(() => {
     if (!isBroker || selectedClientId) return;
@@ -284,10 +314,20 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     [properties, activeClientId, inScope]);
 
   const filtered = useMemo(() => properties
+    // Per-client suite visibility: when viewing as a client, hide suites
+    // tagged for other clients. Edit always uses the raw property (see
+    // editRawProperty) so untagged clients' suites aren't lost on save.
+    //
+    // This runs BEFORE the filters below, not after: the filters ask questions
+    // about suites, and a suite tagged for someone else must not be able to
+    // pull its property into a client's results — that would leak the suite's
+    // existence through the result count.
+    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
     .filter(p => {
       if (!inScope(p)) return false;
       if (showFavoritesOnly && !favorites.has(p.id)) return false;
       if (typeFilter !== 'All' && !propertyTypesOf(p).includes(typeFilter)) return false;
+      if (!propertyMatches(p, filters)) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         return (
@@ -298,10 +338,6 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
       }
       return true;
     })
-    // Per-client suite visibility: when viewing as a client, hide suites
-    // tagged for other clients. Edit always uses the raw property (see
-    // editRawProperty) so untagged clients' suites aren't lost on save.
-    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
     .sort((a, b) => {
       if (sortKey === 'size_desc') return (b.total_sf ?? 0) - (a.total_sf ?? 0);
       if (sortKey === 'size_asc') return (a.total_sf ?? 0) - (b.total_sf ?? 0);
@@ -320,7 +356,31 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
       if (sortKey === 'lng_desc') return (b.lng ?? -180) - (a.lng ?? -180);
       if (sortKey === 'lng_asc') return (a.lng ?? -180) - (b.lng ?? -180);
       return 0;
-    }), [properties, activeClientId, inScope, showFavoritesOnly, favorites, typeFilter, searchQuery, sortKey]);
+    }), [properties, activeClientId, inScope, showFavoritesOnly, favorites, typeFilter, filters, searchQuery, sortKey]);
+
+  // Which suites actually satisfied a suite-level filter, so the cards can mark
+  // them. null means no suite-level filter is on and nothing should be marked.
+  const matchedSuiteIds = useMemo(() => {
+    if (!hasSuiteCriteria(filters)) return null;
+    const ids = new Set<string>();
+    for (const p of filtered) {
+      for (const s of p.suites ?? []) if (suiteMatches(s, filters)) ids.add(s.id);
+    }
+    return ids;
+  }, [filtered, filters]);
+
+  // True when anything is hiding properties the viewer would otherwise see.
+  const isNarrowed = filtered.length !== clientProperties.length;
+  const anyFilterOn = activeFilterCount(filters) > 0 || typeFilter !== 'All'
+    || searchQuery !== '' || showFavoritesOnly;
+
+  function clearAllFilters() {
+    setFilters(EMPTY_FILTERS);
+    setTypeFilter('All');
+    setSearchQuery('');
+    setShowFavoritesOnly(false);
+    setSelectedProperty(null);
+  }
 
   if (detailProperty) {
     return (
@@ -477,9 +537,20 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
             ))}
           </div>
 
+          {/* Filters — same z-layer reasoning as Sort below */}
+          <PropertyFilterMenu
+            className="ml-auto md:ml-0"
+            filters={filters}
+            onChange={f => { setFilters(f); setSelectedProperty(null); }}
+            typeFilter={typeFilter}
+            propertyTypes={propertyTypes}
+            onTypeFilter={handleTypeFilter}
+            markets={markets}
+          />
+
           {/* Sort — z 35: above the map and list overlay (30), below the
               sticky header (40) so the Viewing-as dropdown covers it */}
-          <div className="relative ml-auto md:ml-0" style={{ zIndex: 35 }} onClick={e => e.stopPropagation()}>
+          <div className="relative" style={{ zIndex: 35 }} onClick={e => e.stopPropagation()}>
             <button
               onClick={() => setShowSortMenu(v => !v)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
@@ -553,11 +624,14 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 typeFilter={typeFilter}
                 propertyTypes={propertyTypes}
                 isAdmin={isAdmin}
+                matchedSuiteIds={matchedSuiteIds}
+                filtersActive={anyFilterOn}
                 onSelect={p => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
                 onFavoriteToggle={handleFavoriteToggle}
                 onEdit={editRawProperty}
+                onClearFilters={clearAllFilters}
               />
             )}
           </div>
@@ -573,11 +647,14 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 typeFilter={typeFilter}
                 propertyTypes={propertyTypes}
                 isAdmin={isAdmin}
+                matchedSuiteIds={matchedSuiteIds}
+                filtersActive={anyFilterOn}
                 onSelect={setDetailProperty}
                 onOpenDetail={setDetailProperty}
                 onTypeFilter={handleTypeFilter}
                 onFavoriteToggle={handleFavoriteToggle}
                 onEdit={editRawProperty}
+                onClearFilters={clearAllFilters}
               />
             )}
           </div>
@@ -607,22 +684,37 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                   <ExportBar
                     clientName={selectedClient?.company || selectedClient?.name || ''}
                     count={clientProperties.length}
+                    shownCount={isNarrowed ? filtered.length : null}
                     exporting={exporting}
-                    onExcel={handleExportExcel}
-                    onPdf={handleExportPdf}
+                    onExcel={() => requestExport('excel')}
+                    onPdf={() => requestExport('pdf')}
                   />
                   {filtered.map(p => (
                     <ListViewRow
                       key={p.id}
                       property={p}
                       selected={selectedProperty?.id === p.id}
+                      matchedSuiteIds={matchedSuiteIds}
                       onSelect={() => setSelectedProperty(prev => prev?.id === p.id ? null : p)}
                       onOpenDetail={() => setDetailProperty(p)}
                       onEdit={isAdmin ? () => editRawProperty(p) : undefined}
                     />
                   ))}
                   {filtered.length === 0 && (
-                    <p className="text-sm text-center py-16" style={{ color: '#9aaba8' }}>No properties match the current filters.</p>
+                    <div className="flex flex-col items-center gap-3 py-16">
+                      <p className="text-sm" style={{ color: '#9aaba8' }}>No properties match the current filters.</p>
+                      {anyFilterOn && (
+                        <button
+                          onClick={clearAllFilters}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide text-white transition-colors"
+                          style={{ backgroundColor: '#d41f27' }}
+                          onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#b81920')}
+                          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#d41f27')}
+                        >
+                          Clear Filters
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -635,6 +727,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
                 property={selectedProperty}
                 isFavorited={favorites.has(selectedProperty.id)}
                 notesCount={notesCounts[selectedProperty.id] ?? 0}
+                matchedSuiteIds={matchedSuiteIds}
                 onOpenDetail={setDetailProperty}
                 onFavoriteToggle={handleFavoriteToggle}
                 onOpenNotes={setNotesProperty}
@@ -754,6 +847,19 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         <p className="text-[10px] font-bold uppercase tracking-widest mt-1" style={{ color: '#d41f27' }}>Built on Relationships.</p>
       </footer>
 
+      {/* Asked only when the on-screen list is narrower than the client's set */}
+      {exportScope && (
+        <ExportScopeDialog
+          kind={exportScope}
+          allCount={clientProperties.length}
+          shownCount={filtered.length}
+          clientName={selectedClient?.company || selectedClient?.name || ''}
+          onAll={() => runExport(exportScope, clientProperties)}
+          onShown={() => runExport(exportScope, filtered)}
+          onCancel={() => setExportScope(null)}
+        />
+      )}
+
       {/* Mounted only while exporting a PDF; prints itself once photos load */}
       {printReport && <PrintSummary report={printReport} onReady={handlePrintReady} />}
     </div>
@@ -763,9 +869,11 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
 // ---------------------------------------------------------------------------
 // ExportBar — per-client Property Summary Report export, above the List view
 // ---------------------------------------------------------------------------
-function ExportBar({ clientName, count, exporting, onExcel, onPdf }: {
+function ExportBar({ clientName, count, shownCount, exporting, onExcel, onPdf }: {
   clientName: string;
   count: number;
+  /** Non-null when filters are narrowing the list; the export will ask which. */
+  shownCount: number | null;
   exporting: 'excel' | 'pdf' | null;
   onExcel: () => void;
   onPdf: () => void;
@@ -780,6 +888,7 @@ function ExportBar({ clientName, count, exporting, onExcel, onPdf }: {
         <p className="text-xs mt-0.5" style={{ color: '#9aaba8' }}>
           {count} propert{count === 1 ? 'y' : 'ies'}
           {clientName ? ` for ${clientName}` : ' — all clients'}
+          {shownCount != null && ` · ${shownCount} shown`}
         </p>
       </div>
       <button
@@ -804,6 +913,89 @@ function ExportBar({ clientName, count, exporting, onExcel, onPdf }: {
         <Download className="w-3.5 h-3.5" />
         {exporting === 'pdf' ? 'Preparing…' : 'Export PDF'}
       </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ExportScopeDialog — everything for the client, or just the narrowed list?
+//
+// Shown only when the two differ. Neither answer is safe to assume: exporting
+// everything hides that the filters were ignored, exporting the filtered list
+// hides that properties were left out.
+// ---------------------------------------------------------------------------
+function ExportScopeDialog({ kind, allCount, shownCount, clientName, onAll, onShown, onCancel }: {
+  kind: 'excel' | 'pdf';
+  allCount: number;
+  shownCount: number;
+  clientName: string;
+  onAll: () => void;
+  onShown: () => void;
+  onCancel: () => void;
+}) {
+  const plural = (n: number) => `${n} propert${n === 1 ? 'y' : 'ies'}`;
+  const choice = "w-full text-left px-4 py-3 rounded-xl transition-colors";
+
+  return (
+    <div
+      className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(30,38,36,0.5)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ backgroundColor: 'white', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-5 py-4" style={{ borderBottom: '1px solid #e5e1d8' }}>
+          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: '#7a8a87' }}>
+            Export {kind === 'excel' ? 'Excel' : 'PDF'}
+          </p>
+          <p className="text-sm mt-1" style={{ color: '#3a4a47' }}>
+            Your filters are hiding some properties. What should the report cover?
+          </p>
+        </div>
+
+        <div className="p-3 flex flex-col gap-2">
+          <button
+            onClick={onShown}
+            className={choice}
+            style={{ backgroundColor: 'rgba(212,31,39,0.06)', border: '1px solid rgba(212,31,39,0.3)' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.12)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'rgba(212,31,39,0.06)')}
+          >
+            <p className="text-sm font-bold" style={{ color: '#d41f27' }}>Only what's shown</p>
+            <p className="text-xs mt-0.5" style={{ color: '#7a8a87' }}>
+              {plural(shownCount)} matching your filters
+            </p>
+          </button>
+
+          <button
+            onClick={onAll}
+            className={choice}
+            style={{ backgroundColor: 'white', border: '1px solid #dedad3' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f7f5f1')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
+          >
+            <p className="text-sm font-bold" style={{ color: '#1e2624' }}>Everything</p>
+            <p className="text-xs mt-0.5" style={{ color: '#7a8a87' }}>
+              All {plural(allCount)}{clientName ? ` for ${clientName}` : ''}
+            </p>
+          </button>
+        </div>
+
+        <div className="px-3 pb-3">
+          <button
+            onClick={onCancel}
+            className="w-full py-2 rounded-xl text-xs font-semibold uppercase tracking-wide transition-colors"
+            style={{ color: '#7a8a87' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -880,12 +1072,14 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
 interface ListViewRowProps {
   property: Property;
   selected: boolean;
+  /** Suites that satisfied a suite-level filter; null when none is active. */
+  matchedSuiteIds: Set<string> | null;
   onSelect: () => void;
   onOpenDetail: () => void;
   onEdit?: () => void;
 }
 
-function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: ListViewRowProps) {
+function ListViewRow({ property, selected, matchedSuiteIds, onSelect, onOpenDetail, onEdit }: ListViewRowProps) {
   const { photos } = usePropertyPhotos(property.id, property.slug);
   const photoSrc = photos[0] ?? property.hero_image_url ?? null;
   const suites = property.suites ?? [];
@@ -972,20 +1166,30 @@ function ListViewRow({ property, selected, onSelect, onOpenDetail, onEdit }: Lis
                 </tr>
               </thead>
               <tbody style={{ color: '#1e2624' }}>
-                {suites.map(s => (
-                  <tr key={s.id}>
-                    <td className={cell}>
-                      {s.suite_name}
-                      {isSaleSuite(s) && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold align-middle"
-                          style={{ backgroundColor: 'rgba(46,125,79,0.1)', color: '#2e7d4f' }}>For Sale</span>
-                      )}
-                    </td>
-                    <td className={`${cell} tabular-nums`}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
-                    <td className={cell}>{rate(s.base_rent)}</td>
-                    <td className={cell} style={{ color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>
-                  </tr>
-                ))}
+                {suites.map(s => {
+                  // Every suite stays listed; the ones that answered the filter
+                  // are tinted so it's obvious why the building came up.
+                  const matched = matchedSuiteIds?.has(s.id) ?? false;
+                  const tint = matched ? { backgroundColor: 'rgba(212,31,39,0.06)' } : undefined;
+                  return (
+                    <tr key={s.id}>
+                      <td className={`${cell} pl-2 rounded-l`} style={tint}>
+                        {s.suite_name}
+                        {isSaleSuite(s) && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-semibold align-middle"
+                            style={{ backgroundColor: 'rgba(46,125,79,0.1)', color: '#2e7d4f' }}>For Sale</span>
+                        )}
+                        {matched && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-bold uppercase tracking-wide align-middle"
+                            style={{ backgroundColor: '#d41f27', color: 'white' }}>Match</span>
+                        )}
+                      </td>
+                      <td className={`${cell} tabular-nums`} style={tint}>{s.sf != null ? `${s.sf.toLocaleString()} SF` : '—'}</td>
+                      <td className={cell} style={tint}>{rate(s.base_rent)}</td>
+                      <td className={`${cell} rounded-r`} style={{ ...tint, color: s.available === 'Available Now' ? '#d41f27' : '#3a4a47' }}>{s.available ?? '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
@@ -1004,16 +1208,27 @@ interface QuickViewProps {
   property: Property;
   isFavorited: boolean;
   notesCount: number;
+  /** Suites that satisfied a suite-level filter; null when none is active. */
+  matchedSuiteIds: Set<string> | null;
   onOpenDetail: (p: Property) => void;
   onFavoriteToggle: (id: string, current: boolean) => void;
   onOpenNotes: (p: Property) => void;
   onClose: () => void;
 }
 
-function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavoriteToggle, onOpenNotes, onClose }: QuickViewProps) {
+function QuickView({ property, isFavorited, notesCount, matchedSuiteIds, onOpenDetail, onFavoriteToggle, onOpenNotes, onClose }: QuickViewProps) {
   const { photos } = usePropertyPhotos(property.id, property.slug);
   const suites = property.suites ?? [];
   const heroSrc = photos[0] ?? property.hero_image_url ?? null;
+
+  // Only the first four suites fit in this panel. On a large building the suite
+  // that answered the filter could easily sit below that cut, leaving the panel
+  // showing no reason the property matched — so matches come first.
+  const shownSuites = (matchedSuiteIds
+    ? [...suites].sort((a, b) =>
+        Number(matchedSuiteIds.has(b.id)) - Number(matchedSuiteIds.has(a.id)))
+    : suites
+  ).slice(0, 4);
 
   return (
     <div className="flex flex-col">
@@ -1113,10 +1328,19 @@ function QuickView({ property, isFavorited, notesCount, onOpenDetail, onFavorite
           <div>
             <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: '#7a8a87' }}>Available Suites</p>
             <div className="space-y-1.5">
-              {suites.slice(0, 4).map(s => (
-                <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8' }}>
+              {shownSuites.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2 rounded-lg"
+                  style={matchedSuiteIds?.has(s.id)
+                    ? { backgroundColor: 'rgba(212,31,39,0.06)', border: '1px solid rgba(212,31,39,0.3)' }
+                    : { backgroundColor: '#f7f5f1', border: '1px solid #e5e1d8' }}>
                   <div>
-                    <p className="text-xs font-semibold" style={{ color: '#1e2624' }}>{s.suite_name}</p>
+                    <p className="text-xs font-semibold" style={{ color: '#1e2624' }}>
+                      {s.suite_name}
+                      {matchedSuiteIds?.has(s.id) && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-xs font-bold uppercase tracking-wide"
+                          style={{ backgroundColor: '#d41f27', color: 'white' }}>Match</span>
+                      )}
+                    </p>
                     <p className="text-xs" style={{ color: '#7a8a87' }}>{s.sf?.toLocaleString() ?? '—'} SF</p>
                   </div>
                   <div className="text-right">
