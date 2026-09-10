@@ -82,6 +82,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
   const [listingStatus, setListingStatus] = useState<string[]>(['For Lease']);
   const [market, setMarket] = useState('');
   const [totalSf, setTotalSf] = useState('');
+  const [maxContiguousSf, setMaxContiguousSf] = useState('');
   const [askingRate, setAskingRate] = useState('');
   const [leaseType, setLeaseType] = useState('Full Service');
   const [availability, setAvailability] = useState('');
@@ -280,6 +281,7 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
           listing_status: listingStatus,
           market: market.trim(),
           total_sf: totalSf ? parseInt(totalSf) : null,
+          max_contiguous_sf: maxContiguousSf ? parseInt(maxContiguousSf) : null,
           description: description.trim() || null,
           broker_notes: brokerNotes.map(n => n.trim()).filter(Boolean),
           hero_image_url: finalHeroUrl,
@@ -584,8 +586,8 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
             </div>
           </div>
 
-          {/* Submarket / SF */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Submarket / SF / Max contiguous */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
               <label className={labelCls} style={labelStyle}>Submarket</label>
               <input className={inp} style={inpStyle} value={market} onChange={e => setMarket(e.target.value)} placeholder="e.g. North Austin" {...inpFocus} />
@@ -593,6 +595,10 @@ export default function AddPropertyModal({ onClose, onSaved, clients = [], defau
             <div>
               <label className={labelCls} style={labelStyle}>RSF</label>
               <input type="number" className={inp} style={inpStyle} value={totalSf} onChange={e => setTotalSf(e.target.value)} placeholder="10,000" {...inpFocus} />
+            </div>
+            <div>
+              <label className={labelCls} style={labelStyle}>Max Contiguous</label>
+              <input type="number" className={inp} style={inpStyle} value={maxContiguousSf} onChange={e => setMaxContiguousSf(e.target.value)} placeholder="120,000" {...inpFocus} />
             </div>
           </div>
 

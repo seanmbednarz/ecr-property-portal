@@ -132,6 +132,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
   const [listingStatus, setListingStatus] = useState<string[]>(property.listing_status ?? []);
   const [market, setMarket] = useState(property.market ?? '');
   const [totalSf, setTotalSf] = useState(property.total_sf != null ? String(property.total_sf) : '');
+  const [maxContiguousSf, setMaxContiguousSf] = useState(property.max_contiguous_sf != null ? String(property.max_contiguous_sf) : '');
   const [classTag, setClassTag] = useState(property.sublabel ?? '');
   const [description, setDescription] = useState(property.description ?? '');
   const [brokerNotes, setBrokerNotes] = useState<string[]>(property.broker_notes ?? []);
@@ -248,6 +249,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
           listing_status: listingStatus,
           market: market.trim(),
           total_sf: totalSf ? parseInt(totalSf) : null,
+          max_contiguous_sf: maxContiguousSf ? parseInt(maxContiguousSf) : null,
           description: description.trim() || null,
           hero_image_url: finalHeroUrl,
           brochure_url: finalBrochureUrl,
@@ -542,8 +544,8 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
             </div>
           </div>
 
-          {/* Submarket / SF */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Submarket / SF / Max contiguous */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <div>
               <label className={labelCls} style={labelStyle}>Submarket</label>
               <input className={inp} style={inpStyle} value={market} onChange={e => setMarket(e.target.value)} {...inpFocus} />
@@ -551,6 +553,10 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
             <div>
               <label className={labelCls} style={labelStyle}>RSF</label>
               <input type="number" className={inp} style={inpStyle} value={totalSf} onChange={e => setTotalSf(e.target.value)} {...inpFocus} />
+            </div>
+            <div>
+              <label className={labelCls} style={labelStyle}>Max Contiguous</label>
+              <input type="number" className={inp} style={inpStyle} value={maxContiguousSf} onChange={e => setMaxContiguousSf(e.target.value)} placeholder="120,000" {...inpFocus} />
             </div>
           </div>
 
