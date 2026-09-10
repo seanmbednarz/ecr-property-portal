@@ -1131,6 +1131,11 @@ function ListViewRow({ property, selected, matchedSuiteIds, onSelect, onOpenDeta
             <p className="text-xs font-bold uppercase tracking-wider mt-0.5" style={{ color: '#3a4a47' }}>{formatAddress(property.address)}</p>
             <p className="text-xs mt-1.5 flex flex-wrap gap-x-4" style={{ color: '#7a8a87' }}>
               {property.total_sf != null && <span>Size: <span className="font-bold tabular-nums" style={{ color: '#3a4a47' }}>{property.total_sf.toLocaleString()} SF</span></span>}
+              {/* Directly after building size: the suite table below lists blocks
+                  individually, so this is the only place the largest one is stated. */}
+              {property.max_contiguous_sf != null && (
+                <span>Max Contiguous: <span className="font-bold tabular-nums" style={{ color: '#d41f27' }}>{property.max_contiguous_sf.toLocaleString()} SF</span></span>
+              )}
               {property.market && <span>Submarket: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{property.market}</span></span>}
               <span>Type: <span className="font-bold uppercase" style={{ color: '#3a4a47' }}>{propertyTypesOf(property).join('/')}</span></span>
               {listingStatusOf(property).length > 0 && (
@@ -1241,6 +1246,19 @@ function QuickView({ property, isFavorited, notesCount, matchedSuiteIds, onOpenD
     : suites
   ).slice(0, 4);
 
+  const stats = [
+    { label: 'Size', value: property.total_sf ? `${property.total_sf.toLocaleString()} SF` : '—' },
+    // Next to building size, where a tenant looking for one large block will
+    // compare the two. Omitted when unrecorded rather than shown as a dash, so
+    // a blank is never read as "no contiguous space available".
+    ...(property.max_contiguous_sf != null
+      ? [{ label: 'Max Contiguous', value: `${property.max_contiguous_sf.toLocaleString()} SF` }]
+      : []),
+    { label: 'Suites', value: suites.length > 0 ? `${suites.length}` : '—' },
+    ...(property.year_built ? [{ label: 'Year Built', value: `${property.year_built}` }] : []),
+    ...(property.parking_ratio ? [{ label: 'Parking', value: property.parking_ratio }] : []),
+  ];
+
   return (
     <div className="flex flex-col">
       <div className="relative h-52 shrink-0" style={{ backgroundColor: '#1e2624' }}>
@@ -1281,13 +1299,12 @@ function QuickView({ property, isFavorited, notesCount, matchedSuiteIds, onOpenD
         )}
 
         <div className="grid grid-cols-2 gap-px rounded-lg overflow-hidden" style={{ backgroundColor: '#dedad3' }}>
-          {[
-            { label: 'Size', value: property.total_sf ? `${property.total_sf.toLocaleString()} SF` : '—' },
-            { label: 'Suites', value: suites.length > 0 ? `${suites.length}` : '—' },
-            ...(property.year_built ? [{ label: 'Year Built', value: `${property.year_built}` }] : []),
-            ...(property.parking_ratio ? [{ label: 'Parking', value: property.parking_ratio }] : []),
-          ].map(({ label, value }) => (
-            <div key={label} className="px-3 py-2.5" style={{ backgroundColor: '#f7f5f1' }}>
+          {stats.map(({ label, value }, i) => (
+            // An odd number of stats would leave a half-empty final row showing
+            // the grid's own background; let the last one span instead.
+            <div key={label}
+              className={`px-3 py-2.5${i === stats.length - 1 && stats.length % 2 === 1 ? ' col-span-2' : ''}`}
+              style={{ backgroundColor: '#f7f5f1' }}>
               <p className="text-xs uppercase tracking-wider mb-0.5" style={{ color: '#7a8a87' }}>{label}</p>
               <p className="text-xs font-semibold leading-tight" style={{ color: '#1e2624' }}>{value}</p>
             </div>
