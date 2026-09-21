@@ -24,7 +24,7 @@ import {
 } from '../lib/propertyFilters';
 import { formatAddress } from '../lib/geocode';
 import { mapClientBrokers } from '../lib/clientBrokers';
-import { buildSummaryReport, SummaryReport } from '../lib/summaryReport';
+import { buildSummaryReport, documentLinkFor, DocumentsByProperty, SummaryReport } from '../lib/summaryReport';
 import PrintSummary from './PrintSummary';
 
 interface DashboardProps {
@@ -124,9 +124,31 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setLoading(false);
   }
 
-  function reportFor(list: Property[]): SummaryReport {
+  function reportFor(list: Property[], documents: DocumentsByProperty = {}): SummaryReport {
     const name = selectedClient?.company || selectedClient?.name || '';
-    return buildSummaryReport(list, name);
+    return buildSummaryReport(list, name, documents);
+  }
+
+  // Files from each property page's Documents section, for the PDF's
+  // "Additional Links" column. A failed lookup leaves the column empty rather
+  // than blocking the export.
+  async function documentsFor(list: Property[]): Promise<DocumentsByProperty> {
+    const out: DocumentsByProperty = {};
+    // Chunked: an admin's "all properties" export can carry enough ids to
+    // overrun the request URL in a single .in().
+    const ids = list.map(p => p.id);
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await supabase
+        .from('property_documents')
+        .select('id, property_id, file_name')
+        .in('property_id', ids.slice(i, i + 100))
+        .order('display_order', { ascending: true });
+      if (error || !data) continue;
+      (data as any[]).forEach(d => {
+        (out[d.property_id] ??= []).push({ name: d.file_name, url: documentLinkFor(d.id) });
+      });
+    }
+    return out;
   }
 
   /**
@@ -144,7 +166,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setExportScope(null);
     if (kind === 'pdf') {
       setExporting('pdf');
-      setPrintReport(reportFor(list));
+      setPrintReport(reportFor(list, await documentsFor(list)));
       return;
     }
     setExporting('excel');

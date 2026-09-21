@@ -68,6 +68,18 @@ function Flyer({ row, even }: { row: ReportRow; even: boolean }) {
   );
 }
 
+function Documents({ row, even }: { row: ReportRow; even: boolean }) {
+  return (
+    <td style={{ ...td(even, 'left'), fontSize: '7pt' }}>
+      {row.documents.length === 0 ? <div style={{ textAlign: 'center' }}>—</div> : row.documents.map((d, i) => (
+        <div key={i} style={{ marginTop: i ? 2 : 0, wordBreak: 'break-word' }}>
+          <a href={d.url} style={{ color: RED, fontWeight: 600, textDecoration: 'underline' }}>{d.name}</a>
+        </div>
+      ))}
+    </td>
+  );
+}
+
 function ReportHeader({ report }: { report: SummaryReport }) {
   return (
     <thead>
@@ -103,7 +115,7 @@ function LeaseTable({ report }: { report: SummaryReport }) {
         <tr>
           {['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'BASE RENT',
             `${report.year} OP. EXPENSES`, 'FULL SERVICE RATE', 'QUOTED MONTHLY RENT',
-            'PARKING', 'FLYERS/FLOORPLANS', 'NOTES'].map((h, i) => (
+            'PARKING', 'FLYERS/FLOORPLANS', 'ADDITIONAL LINKS', 'NOTES'].map((h, i) => (
             <th key={i} style={th}>{h}</th>
           ))}
         </tr>
@@ -127,6 +139,7 @@ function LeaseTable({ report }: { report: SummaryReport }) {
               <td style={td(even)}>{monthly != null ? money(monthly) : '—'}</td>
               <td style={td(even)}>{r.parking ?? '—'}</td>
               <Flyer row={r} even={even} />
+              <Documents row={r} even={even} />
               <td style={{ ...td(even, 'left'), fontSize: '7pt' }}>{r.notes ?? '—'}</td>
             </tr>
           );
@@ -148,7 +161,7 @@ function SaleTable({ report, newPage }: { report: SummaryReport; newPage: boolea
       <tbody>
         <tr>
           {['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'SALES PRICE',
-            'PRICE PER SF', 'PARKING', 'FLYER/FLOORPLAN', 'NOTES'].map((h, i) => (
+            'PRICE PER SF', 'PARKING', 'FLYER/FLOORPLAN', 'ADDITIONAL LINKS', 'NOTES'].map((h, i) => (
             <th key={i} style={th}>{h}</th>
           ))}
         </tr>
@@ -169,6 +182,7 @@ function SaleTable({ report, newPage }: { report: SummaryReport; newPage: boolea
               <td style={td(even)}>{money(perSf)}</td>
               <td style={td(even)}>{r.parking ?? '—'}</td>
               <Flyer row={r} even={even} />
+              <Documents row={r} even={even} />
               <td style={{ ...td(even, 'left'), fontSize: '7pt' }}>{r.notes ?? '—'}</td>
             </tr>
           );

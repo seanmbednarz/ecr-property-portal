@@ -18,7 +18,25 @@ export interface ReportRow {
   parking: string | null;
   brochureUrl: string | null;
   imageUrl: string | null; // used by the PDF/print view only
+  documents: ReportDocument[]; // used by the PDF/print view only
   notes: string | null;
+}
+
+// A file from the property page's Documents section. The bucket is private
+// and signed URLs die within the hour, so a report can't carry one — `url` is
+// a permanent portal link (documentLinkFor) that signs a fresh URL on click,
+// after the usual login and access checks.
+export interface ReportDocument {
+  name: string;
+  url: string;
+}
+
+export type DocumentsByProperty = Record<string, ReportDocument[]>;
+
+export const DOCUMENT_LINK_PARAM = 'doc';
+
+export function documentLinkFor(docId: string): string {
+  return `${window.location.origin}/?${DOCUMENT_LINK_PARAM}=${encodeURIComponent(docId)}`;
 }
 
 export interface SummaryReport {
@@ -45,6 +63,7 @@ function sheetForPropertyWithoutSuites(p: Property): 'lease' | 'sale' {
 export function buildSummaryReport(
   properties: Property[],
   clientName: string,
+  documents: DocumentsByProperty = {},
   today: Date = new Date(),
 ): SummaryReport {
   const lease: ReportRow[] = [];
@@ -59,6 +78,7 @@ export function buildSummaryReport(
       parking: p.parking_ratio,
       brochureUrl: p.brochure_url,
       imageUrl: p.hero_image_url,
+      documents: documents[p.id] ?? [],
     };
     const suites = p.suites ?? [];
 

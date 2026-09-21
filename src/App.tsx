@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
+import DocumentLink from './components/DocumentLink';
+import { DOCUMENT_LINK_PARAM } from './lib/summaryReport';
 import { Profile } from './types';
 
 export default function App() {
@@ -45,6 +47,11 @@ export default function App() {
   if (!session) {
     return <LoginPage onLogin={() => {}} />;
   }
+
+  // Permanent document links from exported reports (?doc=<id>). Handled after
+  // the login gate above, so the link only ever works for a signed-in user.
+  const docId = new URLSearchParams(window.location.search).get(DOCUMENT_LINK_PARAM);
+  if (docId) return <DocumentLink docId={docId} />;
 
   return (
     <Dashboard
