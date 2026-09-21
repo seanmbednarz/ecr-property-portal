@@ -153,6 +153,17 @@ function ClientModal({ client, brokers, onClose, onSaved, onDelete }: ClientModa
   async function handleSave() {
     if (!name.trim()) { setError('Full name is required.'); return; }
     if (!company.trim()) { setError('Company is required.'); return; }
+    // Check the login fields before anything is written: the username becomes
+    // the local part of an email address, so a space or "@" would be rejected
+    // by Supabase Auth only after the client row had already been saved.
+    if (username.trim() && password.trim()) {
+      const u = username.trim();
+      if (!/^[A-Za-z0-9._-]{3,32}$/.test(u) || /^\.|\.$|\.\./.test(u)) {
+        setError('Username must be 3-32 characters using only letters, numbers, dot, dash or underscore — no spaces or "@".');
+        return;
+      }
+      if (password.trim().length < 6) { setError('Password must be at least 6 characters.'); return; }
+    }
     setSaving(true); setError('');
     try {
       let finalLogoUrl = logoUrl || client?.logo_url || null;
