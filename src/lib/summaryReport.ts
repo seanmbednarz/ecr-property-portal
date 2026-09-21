@@ -18,7 +18,10 @@ export interface ReportRow {
   parking: string | null;
   brochureUrl: string | null;
   imageUrl: string | null; // used by the PDF/print view only
-  documents: ReportDocument[]; // used by the PDF/print view only
+  documents: ReportDocument[];
+  // One link covering every document — Excel allows a single hyperlink per
+  // cell, so the workbook can't list them individually the way the PDF does.
+  documentsUrl: string | null;
   notes: string | null;
 }
 
@@ -37,6 +40,12 @@ export const DOCUMENT_LINK_PARAM = 'doc';
 
 export function documentLinkFor(docId: string): string {
   return `${window.location.origin}/?${DOCUMENT_LINK_PARAM}=${encodeURIComponent(docId)}`;
+}
+
+export const DOCUMENT_LIST_PARAM = 'docs';
+
+export function documentListLinkFor(propertyId: string): string {
+  return `${window.location.origin}/?${DOCUMENT_LIST_PARAM}=${encodeURIComponent(propertyId)}`;
 }
 
 export interface SummaryReport {
@@ -79,6 +88,7 @@ export function buildSummaryReport(
       brochureUrl: p.brochure_url,
       imageUrl: p.hero_image_url,
       documents: documents[p.id] ?? [],
+      documentsUrl: documents[p.id]?.length ? documentListLinkFor(p.id) : null,
     };
     const suites = p.suites ?? [];
 

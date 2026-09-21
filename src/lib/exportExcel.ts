@@ -20,8 +20,8 @@ const FMT_USD = '"$"#,##0.00';
 const FMT_MONEY = '"$"#,##0.00_);[Red]("$"#,##0.00)';
 const FMT_WHOLE = '"$"#,##0';
 
-const LEASE_WIDTHS = [16.9, 34.7, 18, 31.4, 25.3, 26.1, 23.4, 36.4, 18, 22, 54.4];
-const SALE_WIDTHS = [16.9, 34.7, 18, 31.4, 34.3, 33.3, 20, 22, 54.4];
+const LEASE_WIDTHS = [16.9, 34.7, 18, 31.4, 25.3, 26.1, 23.4, 36.4, 18, 22, 34, 54.4];
+const SALE_WIDTHS = [16.9, 34.7, 18, 31.4, 34.3, 33.3, 20, 22, 34, 54.4];
 
 type Sheet = any; // exceljs types are loaded dynamically
 
@@ -95,6 +95,18 @@ function flyerCell(ws: Sheet, rowIdx: number, col: number, r: ReportRow) {
   }
 }
 
+// A cell holds one hyperlink: a lone document links straight to the file,
+// several link to the portal page that lists them. Called after dressRow,
+// which would otherwise reset the link styling.
+function documentsCell(ws: Sheet, rowIdx: number, col: number, r: ReportRow) {
+  if (r.documents.length === 0) return;
+  const cell = ws.getRow(rowIdx).getCell(col);
+  cell.value = r.documents.length === 1
+    ? { text: r.documents[0].name, hyperlink: r.documents[0].url }
+    : { text: `View ${r.documents.length} Documents`, hyperlink: r.documentsUrl };
+  cell.font = { name: 'Montserrat Medium', size: 11, color: { argb: RED }, underline: true };
+}
+
 function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
   const ws = wb.addWorksheet('Property Summary', {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -106,7 +118,7 @@ function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
   headerRow(ws, [
     'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE NUMBER', 'SQUARE FEET', 'BASE RENT',
     `${report.year}\nOPERATING EXPENSES`, 'FULL \nSERVICE \nRATE', 'QUOTED \nMONTHLY RENT',
-    'PARKING', 'FLYERS/FLOORPLANS', 'NOTES',
+    'PARKING', 'FLYERS/FLOORPLANS', 'ADDITIONAL LINKS', 'NOTES',
   ]);
 
   report.lease.forEach((r, i) => {
@@ -127,7 +139,7 @@ function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
     }
     row.getCell(9).value = r.parking;
     flyerCell(ws, n, 10, r);
-    row.getCell(11).value = r.notes;
+    row.getCell(12).value = r.notes;
 
     dressRow(ws, n, LEASE_WIDTHS.length, i % 2 === 0);
     row.getCell(2).font = { name: 'Montserrat', size: 11, bold: true, color: { argb: INK } };
@@ -136,7 +148,8 @@ function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
     row.getCell(6).numFmt = FMT_USD;
     row.getCell(7).numFmt = FMT_USD;
     row.getCell(8).numFmt = FMT_MONEY;
-    row.getCell(11).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    row.getCell(12).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    documentsCell(ws, n, 11, r);
     if (r.brochureUrl) {
       row.getCell(10).font = { name: 'Montserrat Medium', size: 11, color: { argb: RED }, underline: true };
     }
@@ -154,7 +167,7 @@ function saleSheet(wb: any, report: SummaryReport, logoId: number) {
   titleBlock(ws, report, SALE_WIDTHS.length, logoId);
   headerRow(ws, [
     'PROPERTY #', 'BUILDING/\nADDRESS', 'SUITE NUMBER', 'SQUARE FEET', 'SALES PRICE',
-    'PRICE PER SF', 'PARKING', 'FLYER/FLOORPLAN', 'NOTES',
+    'PRICE PER SF', 'PARKING', 'FLYER/FLOORPLAN', 'ADDITIONAL LINKS', 'NOTES',
   ]);
 
   report.sale.forEach((r, i) => {
@@ -169,14 +182,15 @@ function saleSheet(wb: any, report: SummaryReport, logoId: number) {
     if (r.salePrice != null && r.sf) row.getCell(6).value = { formula: `(E${n}/D${n})` };
     row.getCell(7).value = r.parking;
     flyerCell(ws, n, 8, r);
-    row.getCell(9).value = r.notes;
+    row.getCell(10).value = r.notes;
 
     dressRow(ws, n, SALE_WIDTHS.length, i % 2 === 0);
     row.getCell(2).font = { name: 'Montserrat', size: 11, bold: true, color: { argb: INK } };
     row.getCell(4).numFmt = FMT_SF;
     row.getCell(5).numFmt = FMT_WHOLE;
     row.getCell(6).numFmt = FMT_USD;
-    row.getCell(9).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    row.getCell(10).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    documentsCell(ws, n, 9, r);
     if (r.brochureUrl) {
       row.getCell(8).font = { name: 'Montserrat Medium', size: 11, color: { argb: RED }, underline: true };
     }

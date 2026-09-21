@@ -129,7 +129,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     return buildSummaryReport(list, name, documents);
   }
 
-  // Files from each property page's Documents section, for the PDF's
+  // Files from each property page's Documents section, for the reports'
   // "Additional Links" column. A failed lookup leaves the column empty rather
   // than blocking the export.
   async function documentsFor(list: Property[]): Promise<DocumentsByProperty> {
@@ -172,7 +172,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     setExporting('excel');
     try {
       const { downloadSummaryWorkbook } = await import('../lib/exportExcel');
-      await downloadSummaryWorkbook(reportFor(list));
+      await downloadSummaryWorkbook(reportFor(list, await documentsFor(list)));
     } catch (e: any) {
       setLoadError(`Couldn't build the Excel report: ${e?.message ?? 'unknown error'}`);
     } finally {

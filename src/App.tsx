@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import DocumentLink from './components/DocumentLink';
-import { DOCUMENT_LINK_PARAM } from './lib/summaryReport';
+import { DOCUMENT_LINK_PARAM, DOCUMENT_LIST_PARAM } from './lib/summaryReport';
 import { Profile } from './types';
 
 export default function App() {
@@ -48,10 +48,14 @@ export default function App() {
     return <LoginPage onLogin={() => {}} />;
   }
 
-  // Permanent document links from exported reports (?doc=<id>). Handled after
-  // the login gate above, so the link only ever works for a signed-in user.
-  const docId = new URLSearchParams(window.location.search).get(DOCUMENT_LINK_PARAM);
+  // Permanent document links from exported reports: ?doc=<id> opens one file,
+  // ?docs=<propertyId> lists a property's files. Handled after the login gate
+  // above, so the links only ever work for a signed-in user.
+  const params = new URLSearchParams(window.location.search);
+  const docId = params.get(DOCUMENT_LINK_PARAM);
   if (docId) return <DocumentLink docId={docId} />;
+  const docsPropertyId = params.get(DOCUMENT_LIST_PARAM);
+  if (docsPropertyId) return <DocumentLink propertyId={docsPropertyId} />;
 
   return (
     <Dashboard
