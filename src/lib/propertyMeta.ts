@@ -84,3 +84,20 @@ export function suitesForClient<T extends { client_ids?: string[] | null }>(
   if (!clientId) return suites;
   return suites.filter(s => !s.client_ids?.length || s.client_ids.includes(clientId));
 }
+
+// Pin/badge color for a property flagged over budget for the client being
+// viewed. Overrides the property-type color so it stands out on the map.
+export const OVER_BUDGET_COLOR = '#2563eb';
+
+// A property as one client sees it: only their suites, plus whether it's been
+// flagged over budget for them (drawn as a blue pin on the map).
+export function forClient<P extends {
+  suites?: { client_ids?: string[] | null }[];
+  over_budget_client_ids?: string[];
+}>(p: P, clientId: string): P & { over_budget: boolean } {
+  return {
+    ...p,
+    suites: suitesForClient(p.suites ?? [], clientId),
+    over_budget: (p.over_budget_client_ids ?? []).includes(clientId),
+  };
+}

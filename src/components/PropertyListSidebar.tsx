@@ -1,6 +1,7 @@
 import { Heart, MessageSquare, MapPin, Building, Pencil } from 'lucide-react';
 import { Property } from '../types';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
+import { OVER_BUDGET_COLOR } from '../lib/propertyMeta';
 
 interface PropertyListSidebarProps {
   properties: Property[];
@@ -122,7 +123,7 @@ export default function PropertyListSidebar({
                 className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mt-0.5"
                 style={selectedId === p.id
                   ? { backgroundColor: '#d41f27', color: 'white' }
-                  : { backgroundColor: typeColor(p.property_type), color: 'white' }
+                  : { backgroundColor: p.over_budget ? OVER_BUDGET_COLOR : typeColor(p.property_type), color: 'white' }
                 }
               >
                 {i + 1}

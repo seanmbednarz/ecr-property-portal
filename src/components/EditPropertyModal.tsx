@@ -267,11 +267,14 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
 
       if (propError) throw propError;
 
-      // Sync property_clients: replace all existing assignments
+      // Sync property_clients: replace all existing assignments. Carry each
+      // client's over_budget flag across the reinsert — it's set directly in
+      // the database (no UI), so dropping it here would silently clear it.
+      const overBudgetIds = property.over_budget_client_ids ?? [];
       await supabase.from('property_clients').delete().eq('property_id', property.id);
       if (clientIds.length > 0) {
         await supabase.from('property_clients').insert(
-          clientIds.map(cid => ({ property_id: property.id, client_id: cid }))
+          clientIds.map(cid => ({ property_id: property.id, client_id: cid, over_budget: overBudgetIds.includes(cid) }))
         );
       }
 
@@ -368,6 +371,7 @@ export default function EditPropertyModal({ property, onClose, onSaved, onDelete
         suites: freshSuites ?? [],
         brokers: (propData.brokers ?? []).map((pb: any) => pb.broker).filter(Boolean),
         client_ids: clientIds,
+        over_budget_client_ids: (property.over_budget_client_ids ?? []).filter(id => clientIds.includes(id)),
       };
       onSaved(mapped);
     } catch (err: any) {

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Property } from '../types';
+import { OVER_BUDGET_COLOR } from '../lib/propertyMeta';
 
 const CARTO_VOYAGER = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 const DEFAULT_CENTER: [number, number] = [-97.743057, 30.267153];
@@ -18,7 +19,8 @@ const TYPE_COLORS: Record<string, string> = {
 };
 const DEFAULT_PIN_COLOR = '#383b3b';
 
-function pinColor(type: string): string {
+function pinColor(type: string, overBudget = false): string {
+  if (overBudget) return OVER_BUDGET_COLOR;
   return TYPE_COLORS[type] ?? DEFAULT_PIN_COLOR;
 }
 
@@ -28,15 +30,15 @@ interface MarkerEntry {
   pinWrapper: HTMLElement;
   pinInner: HTMLElement;
   pinTail: HTMLElement;
-  type: string;
+  color: string;
 }
 
 function createMarkerElement(
   index: number,
-  type: string,
+  baseColor: string,
   selected: boolean,
 ): { el: HTMLElement; pinWrapper: HTMLElement; pinInner: HTMLElement; pinTail: HTMLElement } {
-  const color = selected ? '#d41f27' : pinColor(type);
+  const color = selected ? '#d41f27' : baseColor;
   const borderColor = selected ? 'white' : 'rgba(255,255,255,0.4)';
   const shadow = selected
     ? '0 4px 14px rgba(0,0,0,0.45)'
@@ -206,7 +208,8 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
       const valid = properties.filter(p => p.lat != null && p.lng != null);
       valid.forEach((p, i) => {
         const isSelected = p.id === selectedIdRef.current;
-        const { el, pinWrapper, pinInner, pinTail } = createMarkerElement(i + 1, p.property_type, isSelected);
+        const color = pinColor(p.property_type, p.over_budget);
+        const { el, pinWrapper, pinInner, pinTail } = createMarkerElement(i + 1, color, isSelected);
 
         el.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -217,7 +220,7 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
           .setLngLat([p.lng!, p.lat!])
           .addTo(m);
 
-        markersRef.current.set(p.id, { marker, el, pinWrapper, pinInner, pinTail, type: p.property_type });
+        markersRef.current.set(p.id, { marker, el, pinWrapper, pinInner, pinTail, color });
       });
 
       if (valid.length > 0 && !selectedIdRef.current) {
@@ -284,9 +287,9 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
 
   // Update pin appearance when selection changes
   useEffect(() => {
-    markersRef.current.forEach(({ el, pinWrapper, pinInner, pinTail, type }, id) => {
+    markersRef.current.forEach(({ el, pinWrapper, pinInner, pinTail, color: baseColor }, id) => {
       const isSelected = id === selectedId;
-      const color = isSelected ? '#d41f27' : pinColor(type);
+      const color = isSelected ? '#d41f27' : baseColor;
       el.style.zIndex = String(isSelected ? 100 : 10);
       pinWrapper.style.transform = `scale(${isSelected ? 1.35 : 1})`;
       pinInner.style.background = color;
@@ -310,10 +313,10 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
     }
   }, [selectedId]);
 
-  const mappedCount = properties.filter(p => p.lat != null && p.lng != null).length;
-  const shownTypes = Array.from(
-    new Set(properties.filter(p => p.lat != null && p.lng != null).map(p => p.property_type)),
-  );
+  const mapped = properties.filter(p => p.lat != null && p.lng != null);
+  const mappedCount = mapped.length;
+  const shownTypes = Array.from(new Set(mapped.filter(p => !p.over_budget).map(p => p.property_type)));
+  const overBudgetCount = mapped.filter(p => p.over_budget).length;
 
   return (
     <div className="relative w-full h-full">
@@ -329,7 +332,7 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
       </div>
 
       {/* Color legend */}
-      {(shownTypes.length > 1 || officeLocation) && (
+      {(shownTypes.length > 1 || officeLocation || overBudgetCount > 0) && (
         <div
           className="absolute bottom-10 left-3 z-[500] px-3 py-2 rounded-xl shadow-lg flex flex-wrap gap-x-3 gap-y-1.5 max-w-xs"
           style={{ backgroundColor: 'rgba(255,255,255,0.95)', border: '1px solid #e5e1d8' }}
@@ -343,6 +346,15 @@ export default function MapView({ properties, selectedId, onSelect, officeLocati
               <span className="text-xs font-medium" style={{ color: '#3a4a47' }}>{type}</span>
             </div>
           ))}
+          {overBudgetCount > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: OVER_BUDGET_COLOR }}
+              />
+              <span className="text-xs font-medium" style={{ color: '#3a4a47' }}>Over Budget</span>
+            </div>
+          )}
           {officeLocation && (
             <div className="flex items-center gap-1.5">
               <span

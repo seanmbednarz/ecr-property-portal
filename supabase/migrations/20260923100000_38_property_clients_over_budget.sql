@@ -1,0 +1,11 @@
+-- Per-client "over budget" flag on a property assignment.
+--
+-- A survey for one client can mark properties that exceed that client's
+-- budget; the map draws those pins blue. It lives on the assignment row rather
+-- than on the property because the same building can be over budget for one
+-- client and fine for another.
+--
+-- Set directly in SQL (no UI). The Edit Property modal carries it across its
+-- property_clients delete-and-reinsert. Clients can already read
+-- their own assignment rows (sel_property_clients), so they see the flag too.
+ALTER TABLE property_clients ADD COLUMN IF NOT EXISTS over_budget boolean NOT NULL DEFAULT false;

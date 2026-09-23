@@ -27,6 +27,10 @@ export interface Property {
   client: string | null;
   client_id: string | null;
   client_ids?: string[];
+  // Clients this property is flagged over budget for (property_clients.over_budget).
+  over_budget_client_ids?: string[];
+  // Set when viewing as a client: this property is over budget for them.
+  over_budget?: boolean;
   slug: string;
   created_at: string;
   // Maintained by DB triggers (migration 27) on property and suite writes.

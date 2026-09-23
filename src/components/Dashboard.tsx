@@ -16,7 +16,7 @@ import TourMapPage from './TourMapPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor, suitesForClient, isSaleSuite } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, forClient, isSaleSuite, OVER_BUDGET_COLOR } from '../lib/propertyMeta';
 import PropertyFilterMenu from './PropertyFilterMenu';
 import {
   PropertyFilters, EMPTY_FILTERS, activeFilterCount, hasSuiteCriteria,
@@ -190,7 +190,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   async function fetchProperties() {
     const { data, error } = await supabase
       .from('properties')
-      .select(`*, suites:property_suites(*), brokers:property_brokers(broker:brokers(*)), property_clients(client_id)`);
+      .select(`*, suites:property_suites(*), brokers:property_brokers(broker:brokers(*)), property_clients(client_id, over_budget)`);
     if (error) {
       // Never swallow this: a failed load used to render as an empty portal,
       // which reads like "you have no properties" rather than "we couldn't
@@ -210,6 +210,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
         suites: (p.suites ?? []).sort((a: any, b: any) => a.display_order - b.display_order),
         brokers: (p.brokers ?? []).map((pb: any) => pb.broker).filter(Boolean).sort((a: any, b: any) => a.display_order - b.display_order),
         client_ids: (p.property_clients ?? []).map((pc: any) => pc.client_id),
+        over_budget_client_ids: (p.property_clients ?? []).filter((pc: any) => pc.over_budget).map((pc: any) => pc.client_id),
       }));
       setProperties(mapped);
     }
@@ -341,7 +342,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
   // still applies.
   const clientProperties = useMemo(() => properties
     .filter(inScope)
-    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
+    .map(p => activeClientId ? forClient(p, activeClientId) : p)
     .sort((a, b) => a.name.localeCompare(b.name)),
     [properties, activeClientId, inScope]);
 
@@ -354,7 +355,7 @@ export default function Dashboard({ userEmail, profile }: DashboardProps) {
     // about suites, and a suite tagged for someone else must not be able to
     // pull its property into a client's results — that would leak the suite's
     // existence through the result count.
-    .map(p => activeClientId ? { ...p, suites: suitesForClient(p.suites ?? [], activeClientId) } : p)
+    .map(p => activeClientId ? forClient(p, activeClientId) : p)
     .filter(p => {
       if (!inScope(p)) return false;
       if (showFavoritesOnly && !favorites.has(p.id)) return false;
@@ -1294,10 +1295,18 @@ function QuickView({ property, isFavorited, notesCount, matchedSuiteIds, onOpenD
           {listingStatusOf(property).map(s => (
             <span key={s} className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: statusColor(s), color: 'white' }}>{s}</span>
           ))}
+          {property.over_budget && (
+            <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: OVER_BUDGET_COLOR, color: 'white' }}>Over Budget</span>
+          )}
         </div>
       </div>
 
       <div className="p-4 flex flex-col gap-3">
+        {property.over_budget && (
+          <p className="text-xs font-semibold px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(37,99,235,0.08)', color: OVER_BUDGET_COLOR, border: '1px solid rgba(37,99,235,0.25)' }}>
+            Over budget — shown in blue on the map because the rent here exceeds the target budget.
+          </p>
+        )}
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest mb-0.5" style={{ color: '#d41f27' }}>{property.market}</p>
           <h3 className="text-lg font-extrabold uppercase leading-tight" style={{ color: '#1e2624' }}>{property.name}</h3>
