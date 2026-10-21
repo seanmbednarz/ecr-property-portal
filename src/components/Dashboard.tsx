@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Property, Broker, Client, Profile } from '../types';
+import { Property, Suite, Broker, Client, Profile } from '../types';
 import Header, { NavTab } from './Header';
 import PropertyListSidebar from './PropertyListSidebar';
 import MapView from './MapView';
@@ -16,7 +16,7 @@ import TourMapPage from './TourMapPage';
 import { Search, ChevronDown, Check, LayoutList, Map as MapIcon, Pencil, X, Download, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
 import ECRLogo from '../assets/ECR_Logo.svg';
 import { usePropertyPhotos } from '../hooks/usePropertyPhotos';
-import { propertyTypesOf, listingStatusOf, statusColor, forClient, isSaleSuite, OVER_BUDGET_COLOR } from '../lib/propertyMeta';
+import { propertyTypesOf, listingStatusOf, statusColor, forClient, isSaleSuite, salePriceOf, suiteRentsOf, OVER_BUDGET_COLOR } from '../lib/propertyMeta';
 import PropertyFilterMenu from './PropertyFilterMenu';
 import {
   PropertyFilters, EMPTY_FILTERS, activeFilterCount, hasSuiteCriteria,
@@ -1100,6 +1100,42 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
 }
 
 // ---------------------------------------------------------------------------
+// SuitePreviewPrice — pricing lines in the map preview's suite rows. Lease
+// suites show base + op. exp. (so the all-in rate is clear at a glance) and the
+// quoted monthly rent; sale suites show price/SF and the sale price.
+// ---------------------------------------------------------------------------
+function SuitePreviewPrice({ suite }: { suite: Suite }) {
+  const money = (v: number) => `$${Number(v).toFixed(2)}`;
+  const whole = (v: number) => `$${Math.round(v).toLocaleString()}`;
+  const strong = { color: '#3a4a47' };
+  const muted = { color: '#7a8a87' };
+
+  if (isSaleSuite(suite)) {
+    const price = salePriceOf(suite);
+    return (
+      <>
+        <p className="text-xs font-semibold" style={strong}>{suite.base_rent != null ? `${money(suite.base_rent)}/SF` : '—'}</p>
+        {price != null && <p className="text-xs" style={muted}>{whole(price)}</p>}
+      </>
+    );
+  }
+
+  const { monthly } = suiteRentsOf(suite);
+  const { base_rent, op_exp } = suite;
+  const rate = base_rent != null && op_exp != null
+    ? `${money(base_rent)} + ${money(op_exp)} OpEx`
+    : base_rent != null ? `${money(base_rent)}/SF`
+    : op_exp != null ? `${money(op_exp)} OpEx`
+    : '—';
+  return (
+    <>
+      <p className="text-xs font-semibold" style={strong}>{rate}</p>
+      {monthly != null && <p className="text-xs" style={muted}>{whole(monthly)}/mo</p>}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // ListViewRow — availability-report style row for the desktop List view:
 // full-height photo on the left, property header + suites table on the right
 // ---------------------------------------------------------------------------
@@ -1403,7 +1439,7 @@ function QuickView({ property, isFavorited, notesCount, matchedSuiteIds, onOpenD
                     <p className="text-xs" style={{ color: '#7a8a87' }}>{s.sf?.toLocaleString() ?? '—'} SF</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-semibold" style={{ color: '#3a4a47' }}>{s.base_rent ? `$${s.base_rent}/SF` : s.op_exp ? `$${s.op_exp} OpEx` : '—'}</p>
+                    <SuitePreviewPrice suite={s} />
                     <span className="text-xs" style={{ color: s.available === 'Available Now' ? '#d41f27' : '#7a8a87' }}>{s.available ?? '—'}</span>
                   </div>
                 </div>

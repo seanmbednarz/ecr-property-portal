@@ -74,6 +74,17 @@ export function salePriceOf(
   return null;
 }
 
+// Quoted lease rents for a suite: full service is base + op. exp. unless quoted
+// directly, annual is full service × SF unless overridden (the monthly_rent
+// column holds that annual override), and monthly is the annual over 12.
+export function suiteRentsOf(
+  s: { base_rent?: number | null; op_exp?: number | null; full_svc?: number | null; monthly_rent?: number | null; sf?: number | null },
+): { fullSvc: number | null; annual: number | null; monthly: number | null } {
+  const fullSvc = s.full_svc ?? (s.base_rent != null && s.op_exp != null ? s.base_rent + s.op_exp : null);
+  const annual = s.monthly_rent ?? (fullSvc != null && s.sf != null ? fullSvc * s.sf : null);
+  return { fullSvc, annual, monthly: annual != null ? annual / 12 : null };
+}
+
 // Suites visible to a given client: suites tagged with client_ids are only
 // shown to those clients; untagged suites show to everyone. clientId null
 // (admin/broker "All Clients" view) sees everything.
