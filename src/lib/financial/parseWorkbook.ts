@@ -15,27 +15,17 @@
 import {
   Deal, ParseResult, Party, RentPeriod, Stage, TermOption,
 } from './types';
+import {
+  Layout, NOPTIONS, detectLayout, describeMismatch, readStamp, sectionStart,
+} from './layout';
 
 const NSTAGES = 10;
 const BLOCK_WIDTH = 8;
-const NPERIODS = 12;
 const NSUITES = 4;
-const NOPTIONS = 2;
 
-// --- header rows (1-based) ---
+// --- header rows (1-based); identical in every template version ---
 const R_NAME = 2, R_ADDR = 3, R_BLDG = 4, R_TYPE = 5;
 const R_SUITE0 = 8, R_TOTAL = 12;
-
-// --- term-option sections ---
-const SEC0 = 15, SECTION_H = 42;
-const sectionStart = (i: number) => SEC0 + i * SECTION_H;
-
-// --- row offsets within a section ---
-const O_BANNER = 0, O_PARTY = 1, O_COMMENCE = 2, O_PHASE = 3, O_PER0 = 5;
-const O_PRATIO = 20, O_PRES = 22, O_PUNRES = 23, O_PABATE = 24;
-const O_TIALLOW = 27, O_TICONSTR = 28;
-const O_MOVING = 30, O_CONC = 31, O_OTHER = 32;
-const O_TERMINATION = 33, O_RENEWAL = 34, O_SECUR = 35, O_NOTES = 38;
 
 /** Tabs that never contain a deal. */
 const SKIP_TABS = [/^summary$/i, /^instructions$/i, /do not upload/i, /^example/i];
@@ -88,10 +78,10 @@ function partyOf(partyCell: string, label: string, index: number): Party {
   return index % 2 === 0 ? 'landlord' : 'tenant';
 }
 
-function readPeriods(ws: any, S: number, c0: number): RentPeriod[] {
+function readPeriods(ws: any, lay: Layout, S: number, c0: number): RentPeriod[] {
   const out: RentPeriod[] = [];
-  for (let i = 0; i < NPERIODS; i++) {
-    const row = S + O_PER0 + i;
+  for (let i = 0; i < lay.nper; i++) {
+    const row = S + lay.O_PER0 + i;
     const months = cellNum(ws, row, c0 + 1);
     if (months <= 0) continue;
     out.push({
@@ -106,52 +96,52 @@ function readPeriods(ws: any, S: number, c0: number): RentPeriod[] {
   return out;
 }
 
-function readStage(ws: any, S: number, stageIdx: number, totalRSF: number): Stage | null {
+function readStage(ws: any, lay: Layout, S: number, stageIdx: number, totalRSF: number): Stage | null {
   const c0 = blockCol(stageIdx);
-  const periods = readPeriods(ws, S, c0);
-  const parkRatio = cellNum(ws, S + O_PRATIO, c0 + 3);
-  const tiAllowancePSF = cellNum(ws, S + O_TIALLOW, c0 + 3);
-  const tiConstructionPSF = cellNum(ws, S + O_TICONSTR, c0 + 3);
-  const label = cellText(ws, S + O_PARTY, c0 + 1);
+  const periods = readPeriods(ws, lay, S, c0);
+  const parkRatio = cellNum(ws, S + lay.O_PRATIO, c0 + 3);
+  const tiAllowancePSF = cellNum(ws, S + lay.O_TIALLOW, c0 + 3);
+  const tiConstructionPSF = cellNum(ws, S + lay.O_TICONSTR, c0 + 3);
+  const label = cellText(ws, S + lay.O_PARTY, c0 + 1);
 
   // A stage counts as "used" only when it has a rent schedule. Stray parking
   // or TI values without months are treated as an unfinished block.
   if (periods.length === 0) return null;
 
-  const reservedSpaces = cellNum(ws, S + O_PRES, c0 + 3);
+  const reservedSpaces = cellNum(ws, S + lay.O_PRES, c0 + 3);
   // Unreserved is a formula in the template unless the broker typed over it.
   const totalSpaces = parkRatio * totalRSF / 1000;
-  const unreservedRaw = cellNumOrNull(ws, S + O_PUNRES, c0 + 3);
+  const unreservedRaw = cellNumOrNull(ws, S + lay.O_PUNRES, c0 + 3);
   const unreservedSpaces = unreservedRaw ?? Math.max(0, totalSpaces - reservedSpaces);
 
-  const phaseSF = cellNumOrNull(ws, S + O_PHASE, c0 + 1);
+  const phaseSF = cellNumOrNull(ws, S + lay.O_PHASE, c0 + 1);
 
   return {
     index: stageIdx,
     label: label || `Stage ${stageIdx + 1}`,
-    party: partyOf(cellText(ws, S + O_PARTY, c0), label, stageIdx),
-    commence: cellText(ws, S + O_COMMENCE, c0),
-    phaseIn: isYes(cellText(ws, S + O_PHASE, c0)),
+    party: partyOf(cellText(ws, S + lay.O_PARTY, c0), label, stageIdx),
+    commence: cellText(ws, S + lay.O_COMMENCE, c0),
+    phaseIn: isYes(cellText(ws, S + lay.O_PHASE, c0)),
     phaseSF: phaseSF && phaseSF > 0 ? phaseSF : null,
     periods,
     parkRatio,
     reservedSpaces,
-    reservedRate: cellNum(ws, S + O_PRES, c0 + 6),
+    reservedRate: cellNum(ws, S + lay.O_PRES, c0 + 6),
     unreservedSpaces,
-    unreservedRate: cellNum(ws, S + O_PUNRES, c0 + 6),
-    parkAbatedMonths: cellNum(ws, S + O_PABATE, c0 + 3),
+    unreservedRate: cellNum(ws, S + lay.O_PUNRES, c0 + 6),
+    parkAbatedMonths: cellNum(ws, S + lay.O_PABATE, c0 + 3),
     tiAllowancePSF,
     tiConstructionPSF,
-    movingAllowance: cellNum(ws, S + O_MOVING, c0 + 7),
-    concessionDesc: cellText(ws, S + O_CONC, c0),
-    concession: cellNum(ws, S + O_CONC, c0 + 7),
-    otherCost: cellNum(ws, S + O_OTHER, c0 + 7),
-    otherDesc: cellText(ws, S + O_OTHER, c0),
-    termination: cellText(ws, S + O_TERMINATION, c0),
-    renewal: cellText(ws, S + O_RENEWAL, c0),
-    securitization: cellNum(ws, S + O_SECUR, c0 + 3),
-    securitizationTerms: cellText(ws, S + O_SECUR, c0 + 4),
-    notes: cellText(ws, S + O_NOTES, c0),
+    movingAllowance: cellNum(ws, S + lay.O_MOVING, c0 + 7),
+    concessionDesc: cellText(ws, S + lay.O_CONC, c0),
+    concession: cellNum(ws, S + lay.O_CONC, c0 + 7),
+    otherCost: cellNum(ws, S + lay.O_OTHER, c0 + 7),
+    otherDesc: cellText(ws, S + lay.O_OTHER, c0),
+    termination: cellText(ws, S + lay.O_TERMINATION, c0),
+    renewal: cellText(ws, S + lay.O_RENEWAL, c0),
+    securitization: cellNum(ws, S + lay.O_SECUR, c0 + 3),
+    securitizationTerms: cellText(ws, S + lay.O_SECUR, c0 + 4),
+    notes: cellText(ws, S + lay.O_NOTES, c0),
   };
 }
 
@@ -163,6 +153,7 @@ export async function parseWorkbook(file: File): Promise<ParseResult> {
 
   const deals: Deal[] = [];
   const warnings: string[] = [];
+  const rejected: string[] = [];
 
   wb.eachSheet((ws: any) => {
     const tab = String(ws.name ?? '').trim();
@@ -176,24 +167,36 @@ export async function parseWorkbook(file: File): Promise<ParseResult> {
       if (name || rsf > 0) suites.push({ name, rsf });
     }
     const totalRSF = suites.reduce((a, s) => a + s.rsf, 0) || cellNum(ws, R_TOTAL, 3);
+    const name = cellText(ws, R_NAME, 2);
+
+    // Which template version is this tab written in? An untouched sheet
+    // matches exactly one layout; one with rows inserted matches none, and is
+    // refused rather than read off-by-a-row. A tab nobody has started is
+    // skipped quietly — an unused placeholder is not an error.
+    const detected = detectLayout(ws);
+    if (!detected.layout) {
+      const started = !!name || suites.length > 0;
+      if (started) rejected.push(describeMismatch(tab, detected, readStamp(ws)));
+      return;
+    }
+    const lay = detected.layout;
 
     const options: TermOption[] = [];
     for (let oi = 0; oi < NOPTIONS; oi++) {
-      const S = sectionStart(oi);
+      const S = sectionStart(lay, oi);
       const stages: Stage[] = [];
       for (let si = 0; si < NSTAGES; si++) {
-        const st = readStage(ws, S, si, totalRSF);
+        const st = readStage(ws, lay, S, si, totalRSF);
         if (st) stages.push(st);
       }
       if (stages.length === 0) continue;   // unused term option
       options.push({
         index: oi,
-        label: cellText(ws, S + O_BANNER, 2) || `Option ${oi + 1}`,
+        label: cellText(ws, S + lay.O_BANNER, 2) || `Option ${oi + 1}`,
         stages,
       });
     }
 
-    const name = cellText(ws, R_NAME, 2);
     if (options.length === 0) {
       // Only worth flagging if the broker started filling the tab in.
       if (name) warnings.push(`"${tab}" has no rent schedule filled in — skipped.`);
@@ -219,6 +222,12 @@ export async function parseWorkbook(file: File): Promise<ParseResult> {
     });
   });
 
+  // One bad tab fails the whole upload. Importing the readable tabs and
+  // dropping the rest would produce an analysis that looks complete while
+  // silently missing a deal, which is how a wrong number reaches a client.
+  if (rejected.length > 0) {
+    throw new Error(rejected.join(' '));
+  }
   if (deals.length === 0) {
     throw new Error('no deal tabs found — is this the ECR Deal Analysis template?');
   }
