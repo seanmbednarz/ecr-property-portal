@@ -1101,8 +1101,9 @@ function MobileSheet({ property, onOpenDetail, onClose }: MobileSheetProps) {
 
 // ---------------------------------------------------------------------------
 // SuitePreviewPrice — pricing lines in the map preview's suite rows. Lease
-// suites show base + op. exp. (so the all-in rate is clear at a glance) and the
-// quoted monthly rent; sale suites show price/SF and the sale price.
+// suites show the full service rate (base + op. exp., so the all-in rate is
+// clear at a glance) and the quoted monthly rent; sale suites show price/SF
+// and the sale price.
 // ---------------------------------------------------------------------------
 function SuitePreviewPrice({ suite }: { suite: Suite }) {
   const money = (v: number) => `$${Number(v).toFixed(2)}`;
@@ -1120,10 +1121,9 @@ function SuitePreviewPrice({ suite }: { suite: Suite }) {
     );
   }
 
-  const { monthly } = suiteRentsOf(suite);
+  const { fullSvc, monthly } = suiteRentsOf(suite);
   const { base_rent, op_exp } = suite;
-  const rate = base_rent != null && op_exp != null
-    ? `${money(base_rent)} + ${money(op_exp)} OpEx`
+  const rate = fullSvc != null ? `${money(fullSvc)}/SF`
     : base_rent != null ? `${money(base_rent)}/SF`
     : op_exp != null ? `${money(op_exp)} OpEx`
     : '—';
