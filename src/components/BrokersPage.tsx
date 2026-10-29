@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Edit2, Trash2, Upload, Phone, Mail, Users, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Upload, Phone, Mail, Users, X, KeyRound, Copy, Check } from 'lucide-react';
 import { supabase, edgeFn } from '../lib/supabase';
 import { resizeImageForUpload } from '../lib/resizeImage';
 import { Broker, Client } from '../types';
@@ -20,6 +20,103 @@ function avatarColor(name: string) {
 
 function initials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0].toUpperCase()).slice(0, 2).join('');
+}
+
+// Easy to read aloud or type: no 0/O, 1/l/I lookalikes.
+const PASSWORD_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+
+function generatePassword(length = 10) {
+  const bytes = crypto.getRandomValues(new Uint32Array(length));
+  return Array.from(bytes, n => PASSWORD_CHARS[n % PASSWORD_CHARS.length]).join('');
+}
+
+interface ResetPasswordModalProps {
+  broker: Broker;
+  onClose: () => void;
+}
+
+// Sets a fresh random password via provision-login and shows it exactly once.
+// Supabase Auth only keeps a hash, so this is the one moment it's readable.
+function ResetPasswordModal({ broker, onClose }: ResetPasswordModalProps) {
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  async function handleReset() {
+    if (!broker.email) return;
+    setWorking(true); setError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+      const password = generatePassword();
+      const res = await fetch(
+        edgeFn('provision-login'),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ email: broker.email, password, role: 'broker', broker_id: broker.id }),
+        }
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? `Reset failed (${res.status} ${res.statusText})`);
+      }
+      setNewPassword(password);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to reset password.');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(newPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked; the password is still selectable on screen */ }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[900] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      <div className="w-full max-w-sm rounded-2xl p-6" style={{ backgroundColor: 'white' }}>
+        {newPassword ? (
+          <>
+            <h3 className="text-sm font-bold mb-2" style={{ color: '#1e2624' }}>New password for {broker.name}</h3>
+            <p className="text-xs mb-4" style={{ color: '#7a8a87' }}>
+              Send this to {broker.email}. It won't be shown again once you close this window.
+            </p>
+            <div className="flex items-center gap-2 mb-5">
+              <code className="flex-1 px-3 py-2 rounded-lg text-base font-mono tracking-wider select-all" style={{ backgroundColor: '#f0ede8', color: '#1e2624', border: '1px solid #dedad3' }}>
+                {newPassword}
+              </code>
+              <button onClick={handleCopy} title="Copy password" aria-label="Copy password" className="p-2.5 rounded-lg" style={{ border: '1px solid #dedad3', color: copied ? '#1a6b5a' : '#3a4a47' }}>
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{ backgroundColor: '#d41f27' }}>Done</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3 className="text-sm font-bold mb-2" style={{ color: '#1e2624' }}>Reset {broker.name}'s password?</h3>
+            <p className="text-xs mb-5" style={{ color: '#7a8a87' }}>
+              Their current password will stop working immediately. You'll get a new one to send them.
+            </p>
+            {error && <p className="text-xs font-semibold px-3 py-2 mb-4 rounded-lg" style={{ backgroundColor: 'rgba(212,31,39,0.08)', color: '#d41f27' }}>{error}</p>}
+            <div className="flex gap-3 justify-end">
+              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold" style={{ border: '1px solid #dedad3', color: '#3a4a47' }}>Cancel</button>
+              <button onClick={handleReset} disabled={working} className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#d41f27' }}>
+                {working ? 'Resetting…' : 'Reset Password'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 interface BrokerModalProps {
@@ -217,6 +314,7 @@ export default function BrokersPage({ clients }: BrokersPageProps) {
   const [loading, setLoading] = useState(true);
   const [modalBroker, setModalBroker] = useState<Partial<Broker> | null | false>(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [resetBroker, setResetBroker] = useState<Broker | null>(null);
 
   useEffect(() => { fetchBrokers(); }, []);
 
@@ -323,6 +421,17 @@ export default function BrokersPage({ clients }: BrokersPageProps) {
                     >
                       Edit
                     </button>
+                    {broker.email && (
+                      <button
+                        onClick={() => setResetBroker(broker)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                        style={{ color: '#3a4a47', border: '1px solid #dedad3', backgroundColor: 'white' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f0ede8')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'white')}
+                      >
+                        <KeyRound className="w-3 h-3" /> Reset Password
+                      </button>
+                    )}
                     <button
                       onClick={() => setConfirmDelete(broker.id)}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
@@ -344,6 +453,9 @@ export default function BrokersPage({ clients }: BrokersPageProps) {
       {modalBroker !== false && (
         <BrokerModal broker={modalBroker} onClose={() => setModalBroker(false)} onSaved={handleSaved} onDelete={modalBroker && (modalBroker as Broker).id ? () => setConfirmDelete((modalBroker as Broker).id!) : undefined} />
       )}
+
+      {/* Password reset */}
+      {resetBroker && <ResetPasswordModal broker={resetBroker} onClose={() => setResetBroker(null)} />}
 
       {/* Delete confirm */}
       {confirmDelete && (
