@@ -111,6 +111,25 @@ function splitCompounds(query: string): string | null {
   return changed ? words.join(' ') : null;
 }
 
+// People write a directional the street record doesn't carry: "1401 E Medical
+// Pky, Cedar Park" returns nothing at all from Mapbox, while "1401 Medical Pky"
+// lands on the building. Drops the word between the house number and the
+// street name. Only ever tried as a fallback, so streets that really are "East
+// Something" still resolve on the first pass.
+const DIRECTION = /^(\s*\d+[A-Za-z]?(?:-\d+)?\s+)(?:N|S|E|W|NE|NW|SE|SW|North|South|East|West)\.?\s+(?=\S)/i;
+function dropDirection(query: string): string | null {
+  const out = query.replace(DIRECTION, '$1');
+  return out === query ? null : out;
+}
+
+// Rewrites to fall back on, in order, when the query as typed resolves badly.
+function fallbacks(query: string): string[] {
+  const split = splitCompounds(query);
+  const undirected = dropDirection(query);
+  const both = undirected ? splitCompounds(undirected) : null;
+  return [split, undirected, both].filter((q): q is string => !!q);
+}
+
 async function runSearch(query: string, autocomplete: boolean, limit: number): Promise<MapboxFeature[]> {
   if (!TOKEN) return [];
   const url = `${MAPBOX}?q=${encodeURIComponent(query)}`
@@ -149,11 +168,14 @@ export async function searchAddresses(query: string): Promise<AddressSuggestion[
   // can therefore never displace a result that already resolved properly.
   const weak = direct.length === 0 || direct.every(f => rank(f) === INTERPOLATED);
   if (!weak) return toSuggestions(direct);
-  const split = splitCompounds(query);
-  if (!split) return toSuggestions(direct);
-  const retry = await runSearch(split, true, 5);
-  const better = retry.some(f => rank(f) < INTERPOLATED);
-  return toSuggestions(better ? retry : direct);
+  let fallback: MapboxFeature[] = [];
+  for (const alt of fallbacks(query)) {
+    const retry = await runSearch(alt, true, 5);
+    if (retry.some(f => rank(f) < INTERPOLATED)) return toSuggestions(retry);
+    if (!fallback.length) fallback = retry;
+  }
+  // Nothing resolved properly; an interpolated guess still beats an empty list.
+  return toSuggestions(direct.length ? direct : fallback);
 }
 
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
@@ -162,12 +184,14 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
   const direct = await runSearch(address, false, 1);
   const best = toSuggestions(direct)[0];
   if (best && direct.some(f => rank(f) < INTERPOLATED)) return { lat: best.lat, lng: best.lng };
-  const split = splitCompounds(address);
-  if (split) {
-    const retry = toSuggestions(await runSearch(split, false, 1))[0];
-    if (retry) return { lat: retry.lat, lng: retry.lng };
+  let fallback = best;
+  for (const alt of fallbacks(address)) {
+    const retry = await runSearch(alt, false, 1);
+    const hit = toSuggestions(retry)[0];
+    if (hit && retry.some(f => rank(f) < INTERPOLATED)) return { lat: hit.lat, lng: hit.lng };
+    fallback ??= hit;
   }
-  return best ? { lat: best.lat, lng: best.lng } : null;
+  return fallback ? { lat: fallback.lat, lng: fallback.lng } : null;
 }
 
 const STATE_ABBR: Record<string, string> = {
