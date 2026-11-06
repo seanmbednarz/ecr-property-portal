@@ -81,6 +81,22 @@ function dressRow(ws: Sheet, rowIdx: number, cols: number, even: boolean) {
   row.height = 42;
 }
 
+// The Notes column lists the property details as bullets, and the row grows
+// to fit them — Excel won't auto-size a row holding wrapped text that was
+// written by a library. Called after dressRow, which sets a fixed height.
+function notesCell(ws: Sheet, rowIdx: number, col: number, colWidth: number, r: ReportRow) {
+  const row = ws.getRow(rowIdx);
+  const cell = row.getCell(col);
+  const lines = r.details.map(d => `•  ${d}`);
+  cell.value = lines.join('\n') || null;
+  cell.font = { name: 'Montserrat Medium', size: 10, color: { argb: INK } };
+  cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+  // ~1 character per width unit at 10pt, less the bullet indent; 14pt a line.
+  const perLine = Math.max(20, Math.floor(colWidth * 1.05) - 4);
+  const wrapped = lines.reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perLine)), 0);
+  row.height = Math.max(row.height ?? 42, wrapped * 14 + 12);
+}
+
 function buildingCell(r: ReportRow): string {
   return r.address ? `${r.building}\n${r.address}` : r.building;
 }
@@ -139,16 +155,14 @@ function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
     }
     row.getCell(9).value = r.parking;
     flyerCell(ws, n, 10, r);
-    row.getCell(12).value = r.notes;
-
     dressRow(ws, n, LEASE_WIDTHS.length, i % 2 === 0);
+    notesCell(ws, n, 12, LEASE_WIDTHS[11], r);
     row.getCell(2).font = { name: 'Montserrat', size: 11, bold: true, color: { argb: INK } };
     row.getCell(4).numFmt = FMT_SF;
     row.getCell(5).numFmt = FMT_USD;
     row.getCell(6).numFmt = FMT_USD;
     row.getCell(7).numFmt = FMT_USD;
     row.getCell(8).numFmt = FMT_MONEY;
-    row.getCell(12).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     documentsCell(ws, n, 11, r);
     if (r.brochureUrl) {
       row.getCell(10).font = { name: 'Montserrat Medium', size: 11, color: { argb: RED }, underline: true };
@@ -158,7 +172,9 @@ function leaseSheet(wb: any, report: SummaryReport, logoId: number) {
 }
 
 function saleSheet(wb: any, report: SummaryReport, logoId: number) {
-  const ws = wb.addWorksheet('For Sale', {
+  // A sale-only report is just the sale template, tab name and all; next to
+  // a lease sheet it needs a name of its own.
+  const ws = wb.addWorksheet(report.lease.length > 0 ? 'For Sale' : 'Property Summary', {
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     views: [{ zoomScale: 60, state: 'frozen', ySplit: 3 }],
   });
@@ -182,14 +198,12 @@ function saleSheet(wb: any, report: SummaryReport, logoId: number) {
     if (r.salePrice != null && r.sf) row.getCell(6).value = { formula: `(E${n}/D${n})` };
     row.getCell(7).value = r.parking;
     flyerCell(ws, n, 8, r);
-    row.getCell(10).value = r.notes;
-
     dressRow(ws, n, SALE_WIDTHS.length, i % 2 === 0);
+    notesCell(ws, n, 10, SALE_WIDTHS[9], r);
     row.getCell(2).font = { name: 'Montserrat', size: 11, bold: true, color: { argb: INK } };
     row.getCell(4).numFmt = FMT_SF;
     row.getCell(5).numFmt = FMT_WHOLE;
     row.getCell(6).numFmt = FMT_USD;
-    row.getCell(10).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
     documentsCell(ws, n, 9, r);
     if (r.brochureUrl) {
       row.getCell(8).font = { name: 'Montserrat Medium', size: 11, color: { argb: RED }, underline: true };

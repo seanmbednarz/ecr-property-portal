@@ -27,9 +27,9 @@ function sf(v: number | null): string {
 const th: React.CSSProperties = {
   backgroundColor: RED,
   color: 'white',
-  fontSize: '7.5pt',
+  fontSize: '7pt',
   fontWeight: 700,
-  padding: '6px 5px',
+  padding: '6px 3px',
   border: '0.5pt solid #9aaba8',
   textAlign: 'center',
   verticalAlign: 'middle',
@@ -45,18 +45,55 @@ function td(even: boolean, align: React.CSSProperties['textAlign'] = 'center'): 
     border: '0.5pt solid #9aaba8',
     textAlign: align,
     verticalAlign: 'middle',
+    overflowWrap: 'break-word',
   };
 }
 
+// The photo sits in a fixed-height box and is cropped to fill it, never
+// stretched. The column width comes from the table's <colgroup>; without a
+// fixed layout the browser squeezed this column whenever others ran wide.
 function PhotoCell({ url, even }: { url: string | null; even: boolean }) {
   return (
-    <td style={{ ...td(even), width: 92, padding: 3 }}>
+    <td style={{ ...td(even), padding: 4 }}>
       {url
-        ? <img src={url} alt="" style={{ width: 86, height: 58, objectFit: 'cover', borderRadius: 3, display: 'block' }} />
+        ? (
+          <div style={{ width: '100%', height: 84, overflow: 'hidden', borderRadius: 3 }}>
+            <img
+              src={url}
+              alt=""
+              style={{ width: '100%', height: '100%', maxWidth: 'none', objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+            />
+          </div>
+        )
         : <span style={{ color: '#7a8a87' }}>—</span>}
     </td>
   );
 }
+
+function Notes({ row, even }: { row: ReportRow; even: boolean }) {
+  return (
+    <td style={{ ...td(even, 'left'), fontSize: '6.5pt', lineHeight: 1.35 }}>
+      {row.details.length === 0
+        ? <div style={{ textAlign: 'center' }}>—</div>
+        : (
+          <ul style={{ margin: 0, paddingLeft: 10, listStyle: 'disc' }}>
+            {row.details.map((d, i) => <li key={i} style={{ marginTop: i ? 1 : 0 }}>{d}</li>)}
+          </ul>
+        )}
+    </td>
+  );
+}
+
+// Column widths as percentages of the printable width. Fixed layout makes
+// the browser honour them instead of re-balancing around long text.
+function Cols({ widths }: { widths: number[] }) {
+  return <colgroup>{widths.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>;
+}
+
+//                 photo  #  bldg suite  SF  base opex  FS  mo. park flyer links notes
+const LEASE_COLS = [10,   6, 11,   6,   5,   5,   7,   6,   7,   6,   8,    7,   16];
+//                 photo  #  bldg suite  SF price /SF park flyer links notes
+const SALE_COLS  = [12,   6, 14,   6,   6,   8,   6,   7,   8,    8,   19];
 
 function Flyer({ row, even }: { row: ReportRow; even: boolean }) {
   return (
@@ -80,11 +117,14 @@ function Documents({ row, even }: { row: ReportRow; even: boolean }) {
   );
 }
 
-function ReportHeader({ report }: { report: SummaryReport }) {
+// Title band plus the column headings, all in <thead> so the browser repeats
+// them at the top of every printed page.
+function ReportHeader({ report, headers }: { report: SummaryReport; headers: string[] }) {
+  const cols = headers.length;
   return (
     <thead>
       <tr>
-        <td colSpan={99} style={{ padding: 0, border: 'none' }}>
+        <td colSpan={cols} style={{ padding: 0, border: 'none' }}>
           <div style={{
             backgroundColor: INK, display: 'flex', alignItems: 'center',
             justifyContent: 'space-between', padding: '10px 14px', marginBottom: 0,
@@ -103,22 +143,21 @@ function ReportHeader({ report }: { report: SummaryReport }) {
           </div>
         </td>
       </tr>
+      <tr>
+        {headers.map((h, i) => <th key={i} style={th}>{h}</th>)}
+      </tr>
     </thead>
   );
 }
 
 function LeaseTable({ report }: { report: SummaryReport }) {
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 18 }}>
-      <ReportHeader report={report} />
-      <tbody>
-        <tr>
-          {['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'BASE RENT',
+    <table style={{ width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', marginBottom: 18 }}>
+      <Cols widths={LEASE_COLS} />
+      <ReportHeader report={report} headers={['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'BASE RENT',
             `${report.year} OP. EXPENSES`, 'FULL SERVICE RATE', 'QUOTED MONTHLY RENT',
-            'PARKING', 'FLYERS/FLOORPLANS', 'ADDITIONAL LINKS', 'NOTES'].map((h, i) => (
-            <th key={i} style={th}>{h}</th>
-          ))}
-        </tr>
+            'PARKING', 'FLYERS / FLOORPLANS', 'ADDITIONAL LINKS', 'NOTES']} />
+      <tbody>
         {report.lease.map((r, i) => {
           const even = i % 2 === 0;
           const fullSvc = r.baseRent != null && r.opEx != null ? r.baseRent + r.opEx : r.baseRent;
@@ -140,7 +179,7 @@ function LeaseTable({ report }: { report: SummaryReport }) {
               <td style={td(even)}>{r.parking ?? '—'}</td>
               <Flyer row={r} even={even} />
               <Documents row={r} even={even} />
-              <td style={{ ...td(even, 'left'), fontSize: '7pt' }}>{r.notes ?? '—'}</td>
+              <Notes row={r} even={even} />
             </tr>
           );
         })}
@@ -152,19 +191,15 @@ function LeaseTable({ report }: { report: SummaryReport }) {
 function SaleTable({ report, newPage }: { report: SummaryReport; newPage: boolean }) {
   return (
     <table style={{
-      width: '100%', borderCollapse: 'collapse',
+      width: '100%', tableLayout: 'fixed', borderCollapse: 'collapse',
       // Start the sale report on its own sheet rather than running on from
       // the lease rows mid-page.
       pageBreakBefore: newPage ? 'always' : 'auto',
     }}>
-      <ReportHeader report={report} />
+      <Cols widths={SALE_COLS} />
+      <ReportHeader report={report} headers={['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'SALES PRICE',
+            'PRICE PER SF', 'PARKING', 'FLYER / FLOORPLAN', 'ADDITIONAL LINKS', 'NOTES']} />
       <tbody>
-        <tr>
-          {['', 'PROPERTY #', 'BUILDING/ADDRESS', 'SUITE', 'SQUARE FEET', 'SALES PRICE',
-            'PRICE PER SF', 'PARKING', 'FLYER/FLOORPLAN', 'ADDITIONAL LINKS', 'NOTES'].map((h, i) => (
-            <th key={i} style={th}>{h}</th>
-          ))}
-        </tr>
         {report.sale.map((r, i) => {
           const even = i % 2 === 0;
           const perSf = r.salePrice != null && r.sf ? r.salePrice / r.sf : null;
@@ -183,7 +218,7 @@ function SaleTable({ report, newPage }: { report: SummaryReport; newPage: boolea
               <td style={td(even)}>{r.parking ?? '—'}</td>
               <Flyer row={r} even={even} />
               <Documents row={r} even={even} />
-              <td style={{ ...td(even, 'left'), fontSize: '7pt' }}>{r.notes ?? '—'}</td>
+              <Notes row={r} even={even} />
             </tr>
           );
         })}

@@ -23,6 +23,11 @@ export interface ReportRow {
   // cell, so the workbook can't list them individually the way the PDF does.
   documentsUrl: string | null;
   notes: string | null;
+  // Everything the Notes column shows, one item per line: the suite's own
+  // notes, then the property-page bullets (loading, clear height, office
+  // split…), the property notes, availability and year built — the same
+  // details the dashboard shows on the property page.
+  details: string[];
 }
 
 // A file from the property page's Documents section. The bucket is private
@@ -60,13 +65,31 @@ function longDate(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-// A property with no suites still belongs in the report — it lands on the
-// sheet its listing status implies, carrying building-level SF.
-function sheetForPropertyWithoutSuites(p: Property): 'lease' | 'sale' {
+// A property listed only for sale. Its suites belong on the sale sheet even
+// when one was saved with the default 'lease' type — otherwise a building
+// for sale shows up with a "base rent" and "operating expenses".
+function isSaleOnlyProperty(p: Property): boolean {
   const statuses = listingStatusOf(p);
   const forSale = statuses.includes('For Sale') || statuses.includes('Sold');
   const forLease = statuses.includes('For Lease') || statuses.includes('For Sublease');
-  return forSale && !forLease ? 'sale' : 'lease';
+  return forSale && !forLease;
+}
+
+function splitLines(text: string | null | undefined): string[] {
+  return (text ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+}
+
+function detailsFor(p: Property, s: Suite | null): string[] {
+  const out = [
+    ...splitLines(s?.notes),
+    ...(p.broker_notes ?? []).map(n => n.trim()).filter(Boolean),
+    ...splitLines(p.property_notes),
+  ];
+  const avail = s?.available?.trim();
+  if (avail && !/^available now$/i.test(avail)) out.push(`Available: ${avail}`);
+  if (p.year_built) out.push(`Built ${p.year_built}`);
+  // The same bullet can sit on both the suite and the property.
+  return [...new Set(out)];
 }
 
 export function buildSummaryReport(
@@ -91,6 +114,7 @@ export function buildSummaryReport(
       documentsUrl: documents[p.id]?.length ? documentListLinkFor(p.id) : null,
     };
     const suites = p.suites ?? [];
+    const saleOnly = isSaleOnlyProperty(p);
 
     if (suites.length === 0) {
       const row: ReportRow = {
@@ -101,8 +125,9 @@ export function buildSummaryReport(
         opEx: p.op_exp,
         salePrice: null,
         notes: null,
+        details: detailsFor(p, null),
       };
-      (sheetForPropertyWithoutSuites(p) === 'sale' ? sale : lease).push(row);
+      (saleOnly ? sale : lease).push(row);
       return;
     }
 
@@ -116,8 +141,9 @@ export function buildSummaryReport(
         opEx: s.op_exp ?? p.op_exp,
         salePrice: salePriceOf(s),
         notes: s.notes,
+        details: detailsFor(p, s),
       };
-      (isSaleSuite(s) ? sale : lease).push(row);
+      (isSaleSuite(s) || saleOnly ? sale : lease).push(row);
     });
   });
 
